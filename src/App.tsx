@@ -181,6 +181,7 @@ function ContactEditor({ user, profile, onUserUpdated, onPhoneUpdated }: {
   onPhoneUpdated: (phone: string) => void
 }) {
   const [email, setEmail] = useState(user.email ?? '')
+  const [emailPassword, setEmailPassword] = useState('')
   const [phone, setPhone] = useState(profile.phone_number ?? '')
   const [emailBusy, setEmailBusy] = useState(false)
   const [phoneBusy, setPhoneBusy] = useState(false)
@@ -199,19 +200,21 @@ function ContactEditor({ user, profile, onUserUpdated, onPhoneUpdated }: {
     setEmailError('')
     if (next === user.email?.toLowerCase()) { setEmailNotice('Your email is unchanged.'); return }
     if (next.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next)) { setEmailError('Enter a valid email address.'); return }
+    if (!emailPassword) { setEmailError('Enter your current password to change your email.'); return }
     setEmailBusy(true)
     try {
-      const { data, error } = await supabase.auth.updateUser(
-        { email: next },
-        { emailRedirectTo: window.location.origin + window.location.pathname },
-      )
-      if (error || !data.user) { setEmailError('Could not request an email change. Check the address and try again.'); return }
-      if (data.user.email?.toLowerCase() === next) {
-        onUserUpdated(data.user)
-        setEmailNotice('Email address updated.')
-      } else {
-        setEmailNotice('Check your current and new inboxes for confirmation links. Your sign-in email stays the same until the change is confirmed.')
+      const result = await supabase.functions.invoke('admin-api', {
+        body: { action: 'change-email', email: next, currentPassword: emailPassword },
+      })
+      if (result.error || result.data?.email?.toLowerCase() !== next) {
+        setEmailError(result.data?.message === 'Current password is incorrect.'
+          ? 'Current password is incorrect.' : 'Could not change your email. Check the address and try again.')
+        return
       }
+      setEmailPassword('')
+      const refreshed = await supabase.auth.refreshSession()
+      onUserUpdated(refreshed.data.user ?? { ...user, email: next })
+      setEmailNotice('Email address updated. Use it the next time you sign in.')
     } catch {
       setEmailError('Email changes are temporarily unavailable. Please try again.')
     } finally {
@@ -244,7 +247,9 @@ function ContactEditor({ user, profile, onUserUpdated, onPhoneUpdated }: {
     <form onSubmit={saveEmail} className="space-y-2">
       <label htmlFor="profile-email" className="block text-sm font-semibold text-ink">Email address</label>
       <input id="profile-email" type="email" required maxLength={254} autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} className={input} />
-      <p className="text-xs leading-5 text-muted">Changing your sign-in email may require confirmation from both inboxes.</p>
+      <p className="text-xs leading-5 text-muted">Changes immediately without an email link. Check the address carefully so you can sign in next time.</p>
+      <label htmlFor="profile-email-password" className="block text-sm font-semibold text-ink">Current password</label>
+      <input id="profile-email-password" type="password" required autoComplete="current-password" value={emailPassword} onChange={event => setEmailPassword(event.target.value)} className={input} />
       {emailError && <p role="alert" className="text-xs text-rose-700 dark:text-rose-300">{emailError}</p>}
       {emailNotice && <p role="status" className="text-xs text-emerald-700 dark:text-emerald-300">{emailNotice}</p>}
       <button type="submit" disabled={emailBusy} className={save}>{emailBusy ? 'Saving…' : 'Save email'}</button>

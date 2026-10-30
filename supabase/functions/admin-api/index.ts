@@ -87,6 +87,34 @@ Deno.serve(async (request) => {
       return reply(200, 'Password changed. Please sign in again.')
     }
 
+    if (body.action === 'change-email') {
+      const nextEmail = text(body.email, 254).toLowerCase()
+      const currentPassword = typeof body.currentPassword === 'string' ? body.currentPassword : ''
+      if (!validEmail(nextEmail) || !currentPassword || currentPassword.length > 128) {
+        return reply(400, 'Enter a valid email and your current password.')
+      }
+      if (!user.email) return reply(403, 'Account email is unavailable.')
+
+      const [employee, adminAccount] = await Promise.all([
+        admin.from('employee_profiles').select('id,is_active,must_change_password').eq('id', user.id).maybeSingle(),
+        admin.from('admin_users').select('id').eq('id', user.id).maybeSingle(),
+      ])
+      if (employee.error || adminAccount.error || adminAccount.data || !employee.data?.is_active || employee.data.must_change_password) {
+        return reply(403, 'Employee access required.')
+      }
+      if (nextEmail === user.email.toLowerCase()) return reply(200, 'Email is unchanged.', { email: user.email })
+
+      const verifier = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } })
+      const proof = await verifier.auth.signInWithPassword({ email: user.email, password: currentPassword })
+      if (proof.error || proof.data.user?.id !== user.id) return reply(401, 'Current password is incorrect.')
+
+      const changed = await admin.auth.admin.updateUserById(user.id, { email: nextEmail, email_confirm: true })
+      if (changed.error || changed.data.user?.email?.toLowerCase() !== nextEmail) {
+        return reply(409, 'Could not change email. Check whether the address is available.')
+      }
+      return reply(200, 'Email changed.', { email: changed.data.user.email })
+    }
+
     const { data: operator, error: roleError } = await admin.from('admin_users')
       .select('role,must_change_password').eq('id', user.id).maybeSingle()
     if (roleError || !operator || operator.must_change_password) return reply(403, 'Administrator access required.')
