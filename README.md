@@ -23,6 +23,8 @@ npm run build
 
 For the admin app, run the same commands inside `tlcdashboard-admin/`. No second Supabase project is needed.
 
+The `admin-api` Edge Function uses Deno, not the browser TypeScript compiler. For VS Code, install the recommended Deno extension and the Deno CLI (`npm install -g deno`), then reload the editor. The checked-in `.vscode/settings.json` enables Deno only under `supabase/functions`; the React app keeps its existing TypeScript setup. Check the function with `deno check supabase/functions/admin-api/index.ts`.
+
 After the migration, sign in and verify that clock-in creates one `attendance` row with `clock_out = null`. Reload or sign out and back in: the same shift should still be active. Clock out and confirm that the *same row* now has a `clock_out` timestamp; the next clock-in should make a new row. Test another employee account to confirm each person sees only their own profile and attendance. Test both light/dark themes and a narrow phone viewport.
 
 The dashboard fetches records overlapping the employee's current local Monday–Sunday week for its totals, plus recent shifts. The profile history loads older records in pages as the fixed-height log is scrolled. The displayed clock uses a server timestamp plus the browser's monotonic elapsed time between resynchronizations. The device's wall clock does not set attendance timestamps.
