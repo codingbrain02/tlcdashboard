@@ -124,7 +124,7 @@ Deno.serve(async (request) => {
       const page = Number.isInteger(body.page) && body.page >= 0 && body.page <= 100000 ? body.page : 0
       const size = 20
       const listed = await admin.from('employee_profiles')
-        .select('id,full_name,position,phone_number,is_active,created_at', { count: 'exact' })
+        .select('id,full_name,email,position,phone_number,is_active,created_at', { count: 'exact' })
         .order('created_at', { ascending: false }).range(page * size, page * size + size - 1)
       if (listed.error) return reply(503, 'Could not load employees.')
       const profiles = listed.data ?? []
@@ -134,9 +134,8 @@ Deno.serve(async (request) => {
         if (admins.error) return reply(503, 'Could not load employees.')
         for (const account of admins.data ?? []) adminIds.add(account.id)
       }
-      const employees = await Promise.all(profiles.filter(profile => !adminIds.has(profile.id)).map(async profile => {
-        const auth = await admin.auth.admin.getUserById(profile.id)
-        return { ...profile, email: auth.data.user?.email ?? '' }
+      const employees = profiles.filter(profile => !adminIds.has(profile.id)).map(profile => ({
+        ...profile, email: profile.email ?? '',
       }))
       return reply(200, 'Employees loaded.', { employees, hasMore: (listed.count ?? 0) > (page + 1) * size })
     }

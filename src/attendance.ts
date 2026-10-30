@@ -72,16 +72,22 @@ export function useAttendance(userId: string) {
 
   useEffect(() => {
     const sync = () => { void refresh() }
+    const syncFromChange = () => { setVersion(previous => previous + 1); sync() }
     queueMicrotask(sync)
-    const interval = window.setInterval(sync, 5 * 60 * 1000)
+    const channel = client.channel(`employee-attendance-${userId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'attendance', filter: `user_id=eq.${userId}` }, syncFromChange)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'attendance', filter: `user_id=eq.${userId}` }, syncFromChange)
+      .subscribe(status => { if (status === 'SUBSCRIBED') sync() })
+    const interval = window.setInterval(sync, 30_000)
     window.addEventListener('focus', sync)
     window.addEventListener('online', sync)
     return () => {
       window.clearInterval(interval)
       window.removeEventListener('focus', sync)
       window.removeEventListener('online', sync)
+      void client.removeChannel(channel)
     }
-  }, [refresh])
+  }, [client, refresh, userId])
 
   useEffect(() => {
     if (!anchor) return

@@ -668,6 +668,36 @@ function App() {
     return () => { mounted = false }
   }, [user?.id, profileRefresh])
 
+  useEffect(() => {
+    const client = supabase
+    const userId = user?.id
+    if (!client || !userId) return
+    let mounted = true
+    const refresh = () => {
+      setProfileRefresh(current => current + 1)
+      void client.auth.getUser().then(({ data, error }) => {
+        if (mounted && !error && data.user?.id === userId) {
+          rememberAccount(data.user)
+          setUser(data.user)
+        }
+      })
+    }
+    const channel = client.channel(`employee-profile-${userId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'employee_profiles', filter: `id=eq.${userId}` }, refresh)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'employee_profiles', filter: `id=eq.${userId}` }, refresh)
+      .subscribe(status => { if (status === 'SUBSCRIBED') refresh() })
+    const interval = window.setInterval(refresh, 30_000)
+    window.addEventListener('focus', refresh)
+    window.addEventListener('online', refresh)
+    return () => {
+      mounted = false
+      window.clearInterval(interval)
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('online', refresh)
+      void client.removeChannel(channel)
+    }
+  }, [user?.id])
+
   async function signOut() {
     if (!supabase || logoutBusy) return
     setLogoutBusy(true)

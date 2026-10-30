@@ -4,9 +4,9 @@ Employee and administrator apps built with React, TypeScript, Vite, Tailwind CSS
 
 ## Supabase and first administrator setup
 
-1. The linked `tlcdashboard` project has both [`202610300001_employee_attendance.sql`](supabase/migrations/202610300001_employee_attendance.sql) and [`202610300002_admin_provisioning.sql`](supabase/migrations/202610300002_admin_provisioning.sql) applied. **Do not import either migration again in SQL Editor.**
+1. The linked `tlcdashboard` project has all migrations in [`supabase/migrations/`](supabase/migrations/) applied. **Do not import them again in SQL Editor.**
 2. In **Authentication → Users**, create `codingbrain02@gmail.com` with a private password and confirm the email. This is an application Auth user, separate from your Supabase dashboard login. Never insert directly into `auth.users`.
-3. The Supabase CLI is linked to project `fxldcjqqlhnbdrpapadu`. The second migration granted the confirmed first Auth user the sole `super_admin` role.
+3. The Supabase CLI is linked to project `fxldcjqqlhnbdrpapadu`. The second migration granted the confirmed first Auth user the sole `super_admin` role. Because the CLI login is shared across local projects, use `powershell -ExecutionPolicy Bypass -File .\supabase-project.ps1 <supabase command>` for future remote operations from this folder. The wrapper checks the signed-in email, accessible project, and linked project before running the command; it stops if another account has taken over. It does not store a token or prevent other projects from changing the CLI's global login.
 4. The `admin-api` Edge Function is deployed with JWT verification enabled. The server owns the service key. Never put a service-role or secret key in a `VITE_` variable or browser code.
 5. In **Authentication → Providers → Email**, disable public signups. Employees are created only through the admin app. The admin app generates a temporary password and requires a change at first sign-in; it does not send invitation emails.
 6. Put the project URL and **publishable key** in the parent project's `.env.local` using `.env.example`. The admin app reads the same public values through Vite's `envDir: '..'`. Restart both Vite servers after changing environment values.
@@ -33,5 +33,5 @@ Supabase keeps the Auth session in this browser. Signing out ends this device's 
 
 - Build with `npm run build` and host `dist/` on a static HTTPS host. Configure the host to serve `index.html` for the app's root; the app currently uses internal tabs rather than URL routes.
 - Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in the host's build environment. These are public client values; authorization depends on Supabase Auth, RLS, and the RPC checks.
-- Both migrations and the `admin-api` function are deployed; an unauthenticated function request returned HTTP 401. Test authenticated account creation, password change, and attendance in the browser before using the app for real attendance. Do not treat a successful frontend build as a database integration test.
+- The migrations and the `admin-api` function are deployed; an unauthenticated function request returned HTTP 401. Realtime subscriptions refresh attendance and employee contact details while the apps are open, with periodic refresh as a fallback. Test authenticated account creation, password change, email edits, and attendance in the browser before using the app for real attendance. Do not treat a successful frontend build as a database integration test.
 - Configure your allowed Site URL/redirect URLs in Supabase Authentication settings to match the deployed HTTPS origin. Review Supabase email confirmation and password-recovery settings before inviting employees.
