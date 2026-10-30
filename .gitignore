@@ -27,3 +27,4 @@ dist-ssr
 tlcdashboard-admin/
 .vercel
 .env*
+*.txt
