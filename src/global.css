@@ -1,0 +1,84 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@layer base {
+  button:not(:disabled),
+  a[href],
+  select:not(:disabled),
+  summary,
+  label[for],
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled),
+  input[type='submit']:not(:disabled),
+  input[type='button']:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled,
+  input[type='checkbox']:disabled,
+  input[type='radio']:disabled,
+  input[type='submit']:disabled,
+  input[type='button']:disabled,
+  [role='button'][aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+}
+
+@theme inline {
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --color-page: var(--app-page);
+  --color-surface: var(--app-surface);
+  --color-soft: var(--app-soft);
+  --color-ink: var(--app-ink);
+  --color-muted: var(--app-muted);
+  --color-line: var(--app-line);
+  --color-brand: var(--app-brand);
+}
+
+:root {
+  color-scheme: light;
+  --app-page: #f6f7fc;
+  --app-surface: #fff;
+  --app-soft: #f8f9ff;
+  --app-ink: #222642;
+  --app-muted: #727b98;
+  --app-line: #e7e9f2;
+  --app-brand: #4f4ff1;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --app-page: #121629;
+  --app-surface: #1d2239;
+  --app-soft: #252b44;
+  --app-ink: #f3f4ff;
+  --app-muted: #b1b8d2;
+  --app-line: #353b55;
+  --app-brand: #a3a1ff;
+}
+
+.phone-field {
+  --PhoneInput-color--focus: var(--app-brand);
+  --PhoneInputCountryFlag-borderColor: var(--app-line);
+  --PhoneInputCountryFlag-backgroundColor--loading: transparent;
+}
+
+.phone-field:focus-within {
+  border-color: var(--app-brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-brand) 20%, transparent);
+}
+
+.phone-field .PhoneInputInput {
+  min-width: 0;
+  min-height: 2.75rem;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: var(--app-ink);
+}
+
+.phone-field .PhoneInputInput::placeholder { color: var(--app-muted); }
+.phone-field .PhoneInputCountry { margin-right: 0.75rem; }
