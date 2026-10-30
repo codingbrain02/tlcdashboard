@@ -120,7 +120,7 @@ Deno.serve(async (request) => {
     if (roleError || !operator || operator.must_change_password) return reply(403, 'Administrator access required.')
 
     if (body.action === 'list-employees') {
-      if (operator.role !== 'super_admin') return reply(403, 'Super administrator access required.')
+      if (operator.role !== 'super_admin' && operator.role !== 'admin') return reply(403, 'Administrator access required.')
       const page = Number.isInteger(body.page) && body.page >= 0 && body.page <= 100000 ? body.page : 0
       const size = 20
       const listed = await admin.from('employee_profiles')
@@ -141,14 +141,22 @@ Deno.serve(async (request) => {
     }
 
     if (body.action === 'list-attendance') {
-      if (operator.role !== 'super_admin') return reply(403, 'Super administrator access required.')
+      if (operator.role !== 'super_admin' && operator.role !== 'admin') return reply(403, 'Administrator access required.')
       const page = Number.isInteger(body.page) && body.page >= 0 && body.page <= 100000 ? body.page : 0
       const size = 20
       const listed = await admin.from('attendance')
         .select('id,user_id,clock_in,clock_out', { count: 'exact' })
         .order('clock_in', { ascending: false }).range(page * size, page * size + size - 1)
       if (listed.error) return reply(503, 'Could not load attendance.')
-      const shifts = listed.data ?? []
+      const listedShifts = listed.data ?? []
+      const adminIds = new Set<string>()
+      if (listedShifts.length) {
+        const administrators = await admin.from('admin_users').select('id')
+          .in('id', [...new Set(listedShifts.map(shift => shift.user_id))])
+        if (administrators.error) return reply(503, 'Could not load attendance.')
+        for (const account of administrators.data ?? []) adminIds.add(account.id)
+      }
+      const shifts = listedShifts.filter(shift => !adminIds.has(shift.user_id))
       const names = new Map<string, string>()
       if (shifts.length) {
         const profiles = await admin.from('employee_profiles').select('id,full_name')
