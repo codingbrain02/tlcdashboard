@@ -34,6 +34,18 @@ function text(value: unknown, limit: number) {
   return typeof value === 'string' ? value.trim().slice(0, limit + 1) : ''
 }
 
+function searchWords(value: unknown, limit: number) {
+  if (typeof value !== 'string') return []
+  const normalized = value.trim().replace(/\s+/g, ' ')
+  if (normalized.length > limit) return null
+  const words = normalized ? normalized.split(' ') : []
+  return words.length <= 8 ? words : null
+}
+
+function likeContains(value: string) {
+  return `%${value.replace(/[\\%_*]/g, '\\$&')}%`
+}
+
 function oneTimePassword() {
   const bytes = crypto.getRandomValues(new Uint8Array(32))
   return btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')
@@ -122,19 +134,38 @@ Deno.serve(async (request) => {
     if (body.action === 'list-employees') {
       if (operator.role !== 'super_admin' && operator.role !== 'admin') return reply(403, 'Administrator access required.')
       const page = Number.isInteger(body.page) && body.page >= 0 && body.page <= 100000 ? body.page : 0
-      const size = 20
-      const listed = await admin.from('employee_profiles')
-        .select('id,full_name,email,position,phone_number,is_active,created_at', { count: 'exact' })
-        .order('created_at', { ascending: false }).range(page * size, page * size + size - 1)
-      if (listed.error) return reply(503, 'Could not load employees.')
-      const profiles = listed.data ?? []
-      const adminIds = new Set<string>()
-      if (profiles.length) {
-        const admins = await admin.from('admin_users').select('id').in('id', profiles.map(profile => profile.id))
-        if (admins.error) return reply(503, 'Could not load employees.')
-        for (const account of admins.data ?? []) adminIds.add(account.id)
+      const nameWords = searchWords(body.name, 80)
+      const positionWords = searchWords(body.position, 120)
+      const status = body.status ?? 'all'
+      const sort = body.sort ?? 'newest'
+      if (!nameWords || !positionWords || !['all', 'active', 'inactive'].includes(status)
+        || !['newest', 'name-asc', 'name-desc', 'position-asc', 'position-desc'].includes(sort)) {
+        return reply(400, 'Invalid employee filters.')
       }
-      const employees = profiles.filter(profile => !adminIds.has(profile.id)).map(profile => ({
+      const size = 20
+      const administratorIds = await admin.from('admin_users').select('id', { count: 'exact' }).range(0, 999)
+      if (administratorIds.error || (administratorIds.count ?? 0) > (administratorIds.data?.length ?? 0)) {
+        return reply(503, 'Could not load employees.')
+      }
+      let query = admin.from('employee_profiles')
+        .select('id,full_name,email,position,phone_number,is_active,created_at', { count: 'exact' })
+      if (administratorIds.data?.length) {
+        query = query.not('id', 'in', `(${administratorIds.data.map(account => account.id).join(',')})`)
+      }
+      for (const word of nameWords) query = query.ilike('full_name', likeContains(word))
+      for (const word of positionWords) query = query.ilike('position', likeContains(word))
+      if (status !== 'all') query = query.eq('is_active', status === 'active')
+      if (sort === 'name-asc' || sort === 'name-desc') {
+        query = query.order('full_name', { ascending: sort === 'name-asc' })
+      } else if (sort === 'position-asc' || sort === 'position-desc') {
+        query = query.order('position', { ascending: sort === 'position-asc', nullsFirst: false })
+          .order('full_name', { ascending: true })
+      } else {
+        query = query.order('created_at', { ascending: false })
+      }
+      const listed = await query.order('id', { ascending: true }).range(page * size, page * size + size - 1)
+      if (listed.error) return reply(503, 'Could not load employees.')
+      const employees = (listed.data ?? []).map(profile => ({
         ...profile, email: profile.email ?? '',
       }))
       return reply(200, 'Employees loaded.', { employees, hasMore: (listed.count ?? 0) > (page + 1) * size })
