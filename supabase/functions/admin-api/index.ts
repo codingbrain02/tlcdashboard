@@ -170,6 +170,34 @@ Deno.serve(async (request) => {
       })
     }
 
+    if (body.action === 'update-employee') {
+      if (operator.role !== 'super_admin') return reply(403, 'Super administrator access required.')
+      const employeeId = typeof body.employeeId === 'string' ? body.employeeId.trim() : ''
+      const fullName = text(body.fullName, 120)
+      const position = text(body.position, 120)
+      const phoneNumber = text(body.phoneNumber, 40)
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(employeeId)
+        || !fullName || fullName.length > 120 || !position || position.length > 120
+        || !/^\+[1-9]\d{6,14}$/.test(phoneNumber)) {
+        return reply(400, 'Check the employee details and try again.')
+      }
+
+      const [employee, administrator] = await Promise.all([
+        admin.from('employee_profiles').select('id').eq('id', employeeId).maybeSingle(),
+        admin.from('admin_users').select('id').eq('id', employeeId).maybeSingle(),
+      ])
+      if (employee.error || administrator.error) return reply(503, 'Could not check the employee account.')
+      if (!employee.data || administrator.data) return reply(404, 'Employee not found.')
+
+      const updated = await admin.from('employee_profiles')
+        .update({ full_name: fullName, position, phone_number: phoneNumber })
+        .eq('id', employeeId)
+        .select('id,full_name,email,position,phone_number,is_active,created_at')
+        .single()
+      if (updated.error || !updated.data) return reply(503, 'Could not update employee details.')
+      return reply(200, 'Employee details updated.', { employee: updated.data })
+    }
+
     if (body.action === 'create-employee') {
       const fullName = text(body.fullName, 120)
       const email = text(body.email, 254).toLowerCase()
