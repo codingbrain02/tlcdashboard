@@ -16,6 +16,7 @@ type EmployeeProfile = {
   phone_number: string | null
   is_active: boolean
   must_change_password: boolean
+  terminated_at: string | null
 }
 
 const THEME_KEY = 'tlc-preview-theme-v1'
@@ -130,7 +131,7 @@ function AttendanceTable({ shifts, now, scrollable = false, onReachEnd, hasMore 
       <table className="w-full min-w-[540px] border-collapse text-left text-[13px] whitespace-nowrap">
         <thead>
           <tr>
-            {['Date', 'Clock in', 'Clock out', 'Duration', 'Status'].map((heading) => (
+            {['Date', 'Clock in', 'End time', 'Duration', 'Status'].map((heading) => (
               <th key={heading} scope="col" className="sticky top-0 z-10 bg-soft px-3 py-3 text-[11px] font-extrabold tracking-[0.09em] text-muted uppercase">{heading}</th>
             ))}
           </tr>
@@ -144,12 +145,12 @@ function AttendanceTable({ shifts, now, scrollable = false, onReachEnd, hasMore 
               <td className="px-3 py-4 text-muted">{duration(shiftOverlap(shift, new Date(shift.clockIn).getTime(), now))}</td>
               <td className="px-3 py-4">
                 <span className={'inline-flex items-center gap-2 rounded-full px-2.5 py-1.5 text-[11px] font-bold ' + (
-                  shift.clockOut
+                  shift.endReason === 'terminated' ? 'bg-rose-50 text-rose-800 dark:bg-rose-400/10 dark:text-rose-200' : shift.clockOut
                     ? 'bg-[#eaf8ef] text-[#207b52] dark:bg-[#1d4a3d] dark:text-[#8de6b8]'
                     : 'bg-[#edeaff] text-[#594dc4] dark:bg-[#3e3a72] dark:text-[#c3baff]'
                 )}>
                   <span className="size-1.5 rounded-full bg-current" />
-                  {shift.clockOut ? 'Completed' : 'On duty'}
+                  {shift.endReason === 'terminated' ? 'Terminated' : shift.clockOut ? 'Completed' : 'On duty'}
                 </span>
               </td>
             </tr>
@@ -457,12 +458,13 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
   )
 }
 
-function LoginScreen({ theme, setTheme, rememberedAccount, onForgetAccount, onSignedIn }: {
+function LoginScreen({ theme, setTheme, rememberedAccount, onForgetAccount, onSignedIn, notice }: {
   theme: Theme
   setTheme: (theme: Theme) => void
   rememberedAccount: RememberedAccount | null
   onForgetAccount: () => void
   onSignedIn: (user: User) => void
+  notice?: string
 }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -539,6 +541,7 @@ function LoginScreen({ theme, setTheme, rememberedAccount, onForgetAccount, onSi
           <span className="mb-5 grid size-11 place-items-center rounded-xl bg-[#eeedff] text-[#5552e6] dark:bg-[#34345e] dark:text-[#c6c4ff]"><Icon name="user" size={21} /></span>
           <h2 id="login-title" className="text-[27px] font-bold tracking-tight">Welcome back</h2>
           <p className="mt-2 text-sm leading-6 text-muted">Enter your employee credentials to continue.</p>
+          {notice && <p role="status" className="mt-5 rounded-xl border border-line bg-soft p-3 text-sm">{notice}</p>}
           {!supabase && <p role="alert" className="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm leading-5 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">Sign-in is not configured yet. Add your Supabase project URL and publishable key to <code>.env.local</code>, then restart the app.</p>}
           {error && <p role="alert" className="mt-6 rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm leading-5 text-rose-800 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-100">{error}</p>}
           <form onSubmit={signIn} className="mt-7 space-y-5">
@@ -593,6 +596,7 @@ function App() {
   const [rememberedAccount, setRememberedAccount] = useState<RememberedAccount | null>(loadRememberedAccount)
   const [logoutBusy, setLogoutBusy] = useState(false)
   const [logoutError, setLogoutError] = useState('')
+  const [accessNotice, setAccessNotice] = useState('')
 
   function rememberAccount(verifiedUser: User) {
     const account = accountFromUser(verifiedUser)
@@ -609,6 +613,7 @@ function App() {
   function signedIn(verifiedUser: User) {
     rememberAccount(verifiedUser)
     setAuthError('')
+    setAccessNotice('')
     setProfile(undefined)
     setProfileError('')
     setUser(verifiedUser)
@@ -660,12 +665,21 @@ function App() {
     const client = supabase
     if (!client || !user?.id) return
     let mounted = true
-    void Promise.resolve(client.from('employee_profiles')
-      .select('id,full_name,position,phone_number,is_active,must_change_password')
+    void Promise.all([client.from('employee_profiles')
+      .select('id,full_name,position,phone_number,is_active,must_change_password,terminated_at')
       .eq('id', user.id)
-      .maybeSingle())
-      .then(({ data, error }) => {
+      .maybeSingle(), client.rpc('employee_session_allowed')])
+      .then(([{ data, error }, allowed]) => {
         if (!mounted) return
+        if (data?.terminated_at || (!error && !allowed.error && allowed.data !== true && data?.is_active !== false)) {
+          setAccessNotice(data?.terminated_at ? 'Your employment has been terminated and account access is disabled. Contact your administrator.' : 'Your account access changed. Please sign in again.')
+          setProfile(undefined); setUser(null)
+          void client.auth.signOut({ scope: 'local' })
+          return
+        }
+        if (allowed.error && data?.is_active) {
+          setProfile(null); setProfileError('Could not verify account access. Check your connection and retry.'); return
+        }
         setProfile(error ? null : data)
         setProfileError(error ? 'Employee profile could not be loaded.' : '')
       })
@@ -683,9 +697,20 @@ function App() {
     if (!client || !userId) return
     let mounted = true
     const refresh = () => { if (mounted && !document.hidden) setProfileRefresh(current => current + 1) }
+    const onProfileChanged = (payload: { new: Record<string, unknown> }) => {
+      if (!mounted) return
+      // Access revocation is processed even in a hidden tab. RLS already
+      // blocks server actions while the logout message reaches this device.
+      if (payload.new.terminated_at || payload.new.is_active === false || payload.new.enabled === false) {
+        setAccessNotice('Your account access has been disabled. Contact your administrator.')
+        setProfile(undefined); setUser(null)
+        void client.auth.signOut({ scope: 'local' })
+      } else refresh()
+    }
     const channel = client.channel(`employee-profile-${userId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'employee_profiles', filter: `id=eq.${userId}` }, refresh)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'employee_profiles', filter: `id=eq.${userId}` }, refresh)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'employee_profiles', filter: `id=eq.${userId}` }, onProfileChanged)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'employee_account_access', filter: `id=eq.${userId}` }, onProfileChanged)
       .subscribe()
     const interval = window.setInterval(refresh, 60_000)
     window.addEventListener('focus', refresh)
@@ -718,7 +743,7 @@ function App() {
   if (user === undefined) return authError
     ? <main className="grid min-h-screen place-items-center bg-page px-5 font-sans text-ink"><div className="w-full max-w-md rounded-2xl border border-line bg-surface p-7 text-center shadow-sm"><h1 className="text-xl font-bold">Session check unavailable</h1><p role="alert" className="mt-3 text-sm text-muted">{authError}</p><button type="button" onClick={() => { setAuthError(''); setAuthRetry(value => value + 1) }} className={'mt-6 min-h-11 rounded-xl bg-[#4f4ff1] px-5 text-sm font-bold text-white ' + focusRing}>Retry</button></div></main>
     : <div role="status" className="grid min-h-screen place-items-center bg-page px-5 font-sans text-sm text-muted">Checking your session…</div>
-  if (!user) return <LoginScreen theme={theme} setTheme={setTheme} rememberedAccount={rememberedAccount} onForgetAccount={forgetAccount} onSignedIn={signedIn} />
+  if (!user) return <LoginScreen theme={theme} setTheme={setTheme} rememberedAccount={rememberedAccount} onForgetAccount={forgetAccount} onSignedIn={signedIn} notice={accessNotice} />
   if (profile === undefined || (profile && profile.id !== user.id)) return <div role="status" className="grid min-h-screen place-items-center bg-page px-5 font-sans text-sm text-muted">Checking your employee account…</div>
   if (!profile || !profile.is_active) return (
     <div className="grid min-h-screen place-items-center bg-page px-5 py-10 font-sans text-ink">

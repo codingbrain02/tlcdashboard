@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from './supabase'
 
-export type Shift = { id: string; clockIn: string; clockOut: string | null }
-type ShiftRow = { id: string; clock_in: string; clock_out: string | null }
+export type Shift = { id: string; clockIn: string; clockOut: string | null; endReason: 'clock_out' | 'terminated' }
+type ShiftRow = { id: string; clock_in: string; clock_out: string | null; end_reason: 'clock_out' | 'terminated' }
 type ClockAnchor = { serverMs: number; monotonicMs: number }
 
 function mapShift(row: ShiftRow): Shift {
-  return { id: row.id, clockIn: row.clock_in, clockOut: row.clock_out }
+  return { id: row.id, clockIn: row.clock_in, clockOut: row.clock_out, endReason: row.end_reason }
 }
 
 function weekStart(serverMs: number): string {
@@ -43,7 +43,7 @@ export function useAttendance(userId: string) {
 
       const nextAnchor = { serverMs, monotonicMs: (started + finished) / 2 }
       const monday = weekStart(serverMs)
-      const weekResult = await client.from('attendance').select('id,clock_in,clock_out')
+      const weekResult = await client.from('attendance').select('id,clock_in,clock_out,end_reason')
         .eq('user_id', userId)
         .or(`clock_in.gte.${monday},clock_out.gte.${monday},clock_out.is.null`)
         .order('clock_in', { ascending: false })
@@ -56,7 +56,7 @@ export function useAttendance(userId: string) {
       let recentShifts = weekShifts.slice(0, 4)
       // Most weeks already contain the four recent records; only request older ones when needed.
       if (recentShifts.length < 4) {
-        const recentResult = await client.from('attendance').select('id,clock_in,clock_out')
+        const recentResult = await client.from('attendance').select('id,clock_in,clock_out,end_reason')
           .eq('user_id', userId)
           .order('clock_in', { ascending: false })
           .limit(4)
@@ -162,7 +162,7 @@ export function useAttendanceHistory(userId: string, version: number, enabled: b
     setLoading(true)
     try {
       const { data, error: queryError } = await client.from('attendance')
-        .select('id,clock_in,clock_out')
+        .select('id,clock_in,clock_out,end_reason')
         .eq('user_id', userId)
         .order('clock_in', { ascending: false })
         .range(start, start + pageSize - 1)

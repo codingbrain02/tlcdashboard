@@ -40,6 +40,27 @@ Supabase keeps the Auth session in this browser. Signing out ends this device's 
 
 ## Production operations and limits
 
+### Employee lifecycle and activity logs
+
+Admins and the Super Administrator can terminate, reverse termination, or rehire an employee from the employee profile. Each action requires confirmation. Termination requires a category; Other also requires details. It ends the current shift as Terminated, blocks data access, and sends a minimal live status message that signs the employee out. Reversal and rehire restore the same account but require a fresh sign-in; old sessions and stopped shifts stay closed. Rehire records a new employment start date. Previous attendance is retained.
+
+Only the Super Administrator can edit profile details, sign-in email, registration/employment dates and existing attendance, or view Activity Log. Edits show current and proposed values before confirmation. Stale confirmations and overlapping shift corrections are rejected. Employee IDs remain fixed. Logs record the verified admin, employee, timestamp, reason and before/after values. Logs start when this feature is enabled; historical actors are not guessed. No passwords or tokens are logged.
+
+The database denies access immediately. The Edge Function synchronizes Auth sign-in bans through the supported Auth API. If that service fails, the employee profile exposes a retry for access synchronization; termination remains enforced by the database and old sessions remain blocked after restoration. An offline device receives the sign-out message when it reconnects. A status change does not erase data already displayed or downloaded on that device.
+
+Release order: apply `202611010001_employee_lifecycle.sql`, deploy `admin-api`, then release both frontends together. Keep the schema/audit history when reverting frontend code; reverse a termination explicitly rather than restoring an old database backup over newer records.
+
+Database regression checks run without live credentials:
+
+```text
+deno run --config supabase/tests/deno.json --allow-read --allow-env --allow-sys supabase/tests/run-lifecycle.ts
+deno test supabase/functions/admin-api/employee-access.test.ts
+```
+
+The isolated PostgreSQL runner applies the real schema migrations and access policies with synthetic Auth tables/users. The hosted check also runs the migration and SQL tests inside one transaction ending in ROLLBACK. pg_trgm performance indexes are checked on hosted Postgres; the isolated engine skips that extension.
+
+### Deployment safeguards
+
 - The employee and admin apps contain private account data, so both send `noindex` headers and meta tags. Search-engine optimization belongs on a separate public website, not behind these sign-in screens.
 - The first JavaScript bundle is split from phone-number formatting and admin detail screens. Database indexes support directory sorting/search and recent attendance. A 1 ms end-to-end load is not realistic over the internet; monitor real-user load times and the 95th-percentile API latency after deployment.
 - Public signups are disabled and the Auth minimum password length is 12. Keep this setting, email confirmations for any other Auth flows, JWT verification on `admin-api`, and the service-role key server-side. Check these settings again after recreating a Supabase project.

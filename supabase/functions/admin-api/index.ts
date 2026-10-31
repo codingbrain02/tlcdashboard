@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { synchronizeEmployeeAccess } from './employee-access.ts'
 
 function defaultKey(json: string | undefined) {
   try {
@@ -62,6 +63,47 @@ async function authenticatedUser(request: Request) {
   return error ? null : data.user
 }
 
+const employeeColumns = 'id,full_name,email,position,phone_number,is_active,created_at,terminated_at,termination_reason,termination_details,employment_start_date,revision,access_generation,auth_sync_pending'
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function commandFailure(error: { code?: string; message?: string }) {
+  if (error.code === '42501') return reply(403, 'You do not have permission for this action.')
+  if (error.code === '40001') return reply(409, 'This record changed. Refresh and review your changes again.')
+  if (error.code === 'P0002') return reply(404, 'Employee or attendance record not found.')
+  if (error.code === '22023') return reply(400, error.message ?? 'Check the supplied details.')
+  if (error.code?.startsWith('22') || error.code?.startsWith('23')) return reply(400, 'Check the supplied details, dates and shift status.')
+  return reply(503, 'Could not complete the action. Refresh and try again.')
+}
+
+// The database blocks account actions immediately. Auth bans are synchronized
+// through the supported Auth API. Re-read the generation to handle two admins
+// changing status concurrently; never apply an older ban over a newer rehire.
+async function syncEmployeeAccess(employeeId: string) {
+  return await synchronizeEmployeeAccess({
+    async read() {
+      const latest = await admin.from('admin_employee_directory')
+        .select('access_generation,auth_sync_pending,terminated_at,is_active').eq('id', employeeId).single()
+      if (latest.error) throw latest.error
+      return { generation: latest.data.access_generation, pending: latest.data.auth_sync_pending,
+        blocked: Boolean(latest.data.terminated_at) || !latest.data.is_active }
+    },
+    async setBlocked(blocked) {
+      const changed = await admin.auth.admin.updateUserById(employeeId, { ban_duration: blocked ? '876000h' : 'none' })
+      if (changed.error) throw changed.error
+    },
+    async markSynced(generation) {
+      const result = await admin.from('employee_profiles').update({ auth_sync_pending: false })
+        .eq('id', employeeId).eq('access_generation', generation).select('id')
+      if (result.error) throw result.error
+      return Boolean(result.data?.length)
+    },
+    async markPending() {
+      const result = await admin.from('employee_profiles').update({ auth_sync_pending: true }).eq('id', employeeId)
+      if (result.error) throw result.error
+    },
+  })
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers })
   if (request.method !== 'POST') return reply(405, 'Method not allowed.')
@@ -70,6 +112,10 @@ Deno.serve(async (request) => {
   try {
     const user = await authenticatedUser(request)
     if (!user) return reply(401, 'Sign in required.')
+    const userClient = createClient(url, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: request.headers.get('Authorization')! } },
+    })
     const body = await request.json()
     if (!body || typeof body !== 'object' || Array.isArray(body)) return reply(400, 'Invalid request.')
 
@@ -86,6 +132,10 @@ Deno.serve(async (request) => {
 
       const { data: adminAccount } = await admin.from('admin_users')
         .select('id,must_change_password').eq('id', user.id).maybeSingle()
+      if (!adminAccount) {
+        const allowed = await userClient.rpc('employee_session_allowed')
+        if (allowed.error || allowed.data !== true) return reply(403, 'Employee access required.')
+      }
       const table = adminAccount ? 'admin_users' : 'employee_profiles'
       const { data: account, error: lookupError } = adminAccount
         ? { data: adminAccount, error: null }
@@ -106,6 +156,9 @@ Deno.serve(async (request) => {
         return reply(400, 'Enter a valid email and your current password.')
       }
       if (!user.email) return reply(403, 'Account email is unavailable.')
+
+      const allowed = await userClient.rpc('employee_session_allowed')
+      if (allowed.error || allowed.data !== true) return reply(403, 'Employee access required.')
 
       const [employee, adminAccount] = await Promise.all([
         admin.from('employee_profiles').select('id,is_active,must_change_password').eq('id', user.id).maybeSingle(),
@@ -131,6 +184,68 @@ Deno.serve(async (request) => {
       .select('role,must_change_password').eq('id', user.id).maybeSingle()
     if (roleError || !operator || operator.must_change_password) return reply(403, 'Administrator access required.')
 
+    const runCommand = (employeeId: string, command: string, details: Record<string, unknown>, revision: number) =>
+      admin.rpc('admin_employee_command', {
+        actor_id: user.id, employee_id: employeeId, command, details, expected_revision: revision,
+      })
+
+    if (['terminate', 'reverse-termination', 'rehire', 'sync-employee-access'].includes(body.action)) {
+      const employeeId = text(body.employeeId, 36)
+      if (!uuidPattern.test(employeeId) || body.confirmed !== true) return reply(400, 'Review and confirm this employee action.')
+      if (body.action !== 'sync-employee-access') {
+        if (!Number.isSafeInteger(body.revision) || body.revision < 0) return reply(400, 'Refresh this employee before continuing.')
+        const result = await runCommand(employeeId, body.action, {
+          category: text(body.category, 80), reason: text(body.reason, 1500), startDate: text(body.startDate, 10) || null,
+        }, body.revision)
+        if (result.error) return commandFailure(result.error)
+      }
+      const synced = await syncEmployeeAccess(employeeId)
+      const profile = await admin.from('admin_employee_directory').select(employeeColumns).eq('id', employeeId).single()
+      if (profile.error) return reply(503, 'Action processed. Refresh to see the current account status.')
+      return reply(200, synced ? 'Employee account updated.' : 'Account status saved. Sign-in protection still needs synchronization; please retry.', {
+        employee: profile.data, syncPending: !synced,
+      })
+    }
+
+    if (body.action === 'list-activity') {
+      if (operator.role !== 'super_admin') return reply(403, 'Super administrator access required.')
+      const page = Number.isInteger(body.page) && body.page >= 0 && body.page <= 1000 ? body.page : 0
+      const result = await admin.from('admin_activity_log')
+        .select('id,actor_name,employee_id,employee_name,action,reason,before_data,after_data,occurred_at')
+        .order('occurred_at', { ascending: false }).order('id', { ascending: true }).range(page * 20, page * 20 + 20)
+      if (result.error) return reply(503, 'Could not load activity logs.')
+      return reply(200, 'Activity loaded.', { events: result.data.slice(0, 20), hasMore: result.data.length > 20 })
+    }
+
+    if (body.action === 'update-attendance') {
+      if (operator.role !== 'super_admin') return reply(403, 'Super administrator access required.')
+      if (body.confirmed !== true || !uuidPattern.test(body.employeeId ?? '') || !Number.isSafeInteger(body.revision)) return reply(400, 'Review and confirm the attendance correction.')
+      const result = await runCommand(body.employeeId, 'update-attendance', {
+        shiftId: body.shiftId, clockIn: body.clockIn, clockOut: body.clockOut || null,
+        endReason: body.endReason, expectedClockIn: body.expectedClockIn,
+        expectedClockOut: body.expectedClockOut, expectedEndReason: body.expectedEndReason,
+        reason: text(body.reason, 1500),
+      }, body.revision)
+      if (result.error) return commandFailure(result.error)
+      return reply(200, 'Attendance corrected.')
+    }
+
+    if (body.action === 'update-employee-email') {
+      if (operator.role !== 'super_admin') return reply(403, 'Super administrator access required.')
+      const employeeId = text(body.employeeId, 36)
+      const email = text(body.email, 254).toLowerCase()
+      if (!uuidPattern.test(employeeId) || !validEmail(email) || body.confirmed !== true || !Number.isSafeInteger(body.revision)) return reply(400, 'Review and confirm the email change.')
+      const recorded = await runCommand(employeeId, 'email-change-requested', { email }, body.revision)
+      if (recorded.error) return commandFailure(recorded.error)
+      const changed = await admin.auth.admin.updateUserById(employeeId, { email, email_confirm: true })
+      const outcome = await runCommand(employeeId, changed.error ? 'email-change-failed' : 'email-changed', {
+        email, requestId: recorded.data.eventId,
+      }, body.revision)
+      if (changed.error) return reply(409, 'Could not change email. Check whether the address is already used.')
+      if (outcome.error) return reply(503, 'Email changed; the recorded request needs a log follow-up. Refresh before retrying.')
+      return reply(200, 'Employee email updated.')
+    }
+
     if (body.action === 'list-employees') {
       if (operator.role !== 'super_admin' && operator.role !== 'admin') return reply(403, 'Administrator access required.')
       const page = Number.isInteger(body.page) && body.page >= 0 && body.page <= 1000 ? body.page : 0
@@ -138,16 +253,17 @@ Deno.serve(async (request) => {
       const positionWords = searchWords(body.position, 120)
       const status = body.status ?? 'all'
       const sort = body.sort ?? 'newest'
-      if (!nameWords || !positionWords || !['all', 'active', 'inactive'].includes(status)
+      if (!nameWords || !positionWords || !['all', 'active', 'inactive', 'terminated'].includes(status)
         || !['newest', 'name-asc', 'name-desc', 'position-asc', 'position-desc'].includes(sort)) {
         return reply(400, 'Invalid employee filters.')
       }
       const size = 20
       let query = admin.from('admin_employee_directory')
-        .select('id,full_name,email,position,phone_number,is_active,created_at')
+        .select(employeeColumns)
       for (const word of nameWords) query = query.ilike('full_name', likeContains(word))
       for (const word of positionWords) query = query.ilike('position', likeContains(word))
-      if (status !== 'all') query = query.eq('is_active', status === 'active')
+      if (status === 'terminated') query = query.not('terminated_at', 'is', null)
+      else if (status !== 'all') query = query.eq('is_active', status === 'active').is('terminated_at', null)
       if (sort === 'name-asc' || sort === 'name-desc') {
         query = query.order('full_name', { ascending: sort === 'name-asc' })
       } else if (sort === 'position-asc' || sort === 'position-desc') {
@@ -169,7 +285,7 @@ Deno.serve(async (request) => {
       const page = Number.isInteger(body.page) && body.page >= 0 && body.page <= 1000 ? body.page : 0
       const size = 20
       const listed = await admin.from('admin_attendance_directory')
-        .select('id,user_id,full_name,clock_in,clock_out')
+        .select('id,user_id,full_name,clock_in,clock_out,end_reason')
         .order('clock_in', { ascending: false }).order('id', { ascending: true })
         .range(page * size, page * size + size)
       if (listed.error) return reply(503, 'Could not load attendance.')
@@ -191,17 +307,12 @@ Deno.serve(async (request) => {
         return reply(400, 'Check the employee details and try again.')
       }
 
-      const employee = await admin.from('admin_employee_directory').select('id').eq('id', employeeId).maybeSingle()
-      if (employee.error) return reply(503, 'Could not check the employee account.')
-      if (!employee.data) return reply(404, 'Employee not found.')
-
-      const updated = await admin.from('employee_profiles')
-        .update({ full_name: fullName, position, phone_number: phoneNumber })
-        .eq('id', employeeId)
-        .select('id,full_name,email,position,phone_number,is_active,created_at')
-        .single()
-      if (updated.error || !updated.data) return reply(503, 'Could not update employee details.')
-      return reply(200, 'Employee details updated.', { employee: updated.data })
+      if (body.confirmed !== true || !Number.isSafeInteger(body.revision)) return reply(400, 'Review and confirm the employee changes.')
+      const updated = await runCommand(employeeId, 'update-profile', {
+        fullName, position, phoneNumber, registeredAt: body.registeredAt || null, startDate: body.startDate || null,
+      }, body.revision)
+      if (updated.error) return commandFailure(updated.error)
+      return reply(200, 'Employee details updated.', { employee: updated.data.employee })
     }
 
     if (body.action === 'create-employee') {
@@ -219,10 +330,7 @@ Deno.serve(async (request) => {
       })
       if (created.error || !created.data.user) return reply(409, 'Could not create the account. Check whether the email is already used.')
       const employeeId = created.data.user.id
-      const profile = await admin.from('employee_profiles').update({
-        full_name: fullName, position, phone_number: phoneNumber,
-        is_active: true, must_change_password: true,
-      }).eq('id', employeeId).select('id').single()
+      const profile = await runCommand(employeeId, 'create-employee', { fullName, position, phoneNumber }, 0)
       if (profile.error || !profile.data) {
         await admin.auth.admin.deleteUser(employeeId)
         return reply(503, 'Could not finish account setup. Please retry.')
