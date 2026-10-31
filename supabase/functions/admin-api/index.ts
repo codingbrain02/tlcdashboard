@@ -206,24 +206,18 @@ Deno.serve(async (request) => {
     const adminSession = await userClient.rpc('admin_session_allowed')
     if (adminSession.error || adminSession.data !== true) return reply(403, 'Please sign in again.')
 
-    if (body.action === 'reset-password') {
+    if (body.action === 'set-password') {
       if (operator.role !== 'super_admin') return reply(403, 'Super administrator access required.')
       const targetId = text(body.targetId, 36)
-      const currentPassword = typeof body.currentPassword === 'string' ? body.currentPassword : ''
-      if (!uuidPattern.test(targetId) || targetId === user.id || body.confirmed !== true || !currentPassword || currentPassword.length > 128) {
-        return reply(400, 'Confirm the account and enter your current password.')
+      const newPassword = typeof body.newPassword === 'string' ? body.newPassword : ''
+      if (!uuidPattern.test(targetId) || targetId === user.id || newPassword.length < 12 || newPassword.length > 128) {
+        return reply(400, 'Select an account and enter a password of 12–128 characters.')
       }
-      if (!user.email) return reply(403, 'Account email is unavailable.')
-      const verifier = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } })
-      const proof = await verifier.auth.signInWithPassword({ email: user.email, password: currentPassword })
-      if (proof.error || proof.data.user?.id !== user.id) return reply(401, 'Current password is incorrect.')
-      if (proof.data.session) await verifier.auth.signOut({ scope: 'local' })
-      const authorization = await admin.rpc('request_account_password_reset', { actor_id: user.id, target_id: targetId })
+      const authorization = await admin.rpc('request_account_password_set', { actor_id: user.id, target_id: targetId })
       if (authorization.error) return commandFailure(authorization.error)
-      const temporaryPassword = oneTimePassword()
-      const updated = await changeManagedPassword(targetId, temporaryPassword, authorization.data)
-      if (!updated) return reply(503, 'Could not reset the password. Please retry.')
-      return reply(200, 'Password reset. Share the temporary password privately.', { temporaryPassword })
+      const updated = await changeManagedPassword(targetId, newPassword, authorization.data)
+      if (!updated) return reply(503, 'Could not change the password. Please retry.')
+      return reply(200, 'Password changed. The account can sign in with its new password.')
     }
 
     const runCommand = (employeeId: string, command: string, details: Record<string, unknown>, revision: number) =>
