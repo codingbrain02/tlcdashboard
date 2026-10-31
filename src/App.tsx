@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent, type UIEvent } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode, type UIEvent } from 'react'
 import type { User } from '@supabase/supabase-js'
-import { parsePhoneNumberFromString } from 'libphonenumber-js'
-import PhoneInput from 'react-phone-number-input'
-import flags from 'react-phone-number-input/flags'
-import 'react-phone-number-input/style.css'
 import { supabase } from './supabase'
 import { useAttendance, useAttendanceHistory, type Shift } from './attendance'
+
+const PhoneNumberInput = lazy(() => import('./PhoneNumberInput'))
+const FormattedPhone = lazy(() => import('./FormattedPhone'))
 
 type Page = 'dashboard' | 'profile'
 type Theme = 'light' | 'dark'
@@ -162,7 +161,7 @@ function AttendanceTable({ shifts, now, scrollable = false, onReachEnd, hasMore 
   )
 }
 
-function ProfileDetail({ icon, label, value }: { icon: string; label: string; value: string }) {
+function ProfileDetail({ icon, label, value }: { icon: string; label: string; value: ReactNode }) {
   return (
     <div className="flex min-w-0 items-center gap-3 border-t border-line py-4">
       <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-soft text-brand"><Icon name={icon} size={19} /></span>
@@ -256,7 +255,9 @@ function ContactEditor({ user, profile, onUserUpdated, onPhoneUpdated }: {
     </form>
     <form onSubmit={savePhone} className="space-y-2 border-t border-line pt-5">
       <label htmlFor="profile-phone" className="block text-sm font-semibold text-ink">Phone number</label>
-      <PhoneInput id="profile-phone" required defaultCountry="PH" international countryCallingCodeEditable={false} limitMaxLength addInternationalOption={false} flags={flags} value={phone || undefined} onChange={value => setPhone(value ?? '')} autoComplete="tel" placeholder="Enter phone number" countrySelectProps={{ 'aria-label': 'Phone country' }} className="phone-field min-h-12 w-full rounded-xl border border-line bg-soft px-4 text-sm text-ink" />
+      <Suspense fallback={<p role="status" className="py-3 text-xs text-muted">Loading phone editor…</p>}>
+        <PhoneNumberInput value={phone} onChange={setPhone} />
+      </Suspense>
       <p className="text-xs leading-5 text-muted">Choose your country, then enter your number.</p>
       {phoneError && <p role="alert" className="text-xs text-rose-700 dark:text-rose-300">{phoneError}</p>}
       {phoneNotice && <p role="status" className="text-xs text-emerald-700 dark:text-emerald-300">{phoneNotice}</p>}
@@ -282,9 +283,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
     position: profile.position?.trim() || 'Not provided',
     userId: user.id,
     email: user.email || 'Not provided',
-    phone: profile.phone_number?.trim()
-      ? parsePhoneNumberFromString(profile.phone_number.trim())?.formatInternational() || profile.phone_number.trim()
-      : 'Not provided',
+    phone: profile.phone_number?.trim() || 'Not provided',
   }
   const initials = fullName.split(/\s+/).slice(0, 2).map((word: string) => word[0]?.toUpperCase()).join('') || 'E'
   const [page, setPage] = useState<Page>('dashboard')
@@ -438,7 +437,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
                   <ProfileDetail icon="user" label="Full name" value={employee.fullName} />
                   <ProfileDetail icon="briefcase" label="Position" value={employee.position} />
                   <ProfileDetail icon="grid" label="Unique user ID" value={employee.userId} />
-                  {editingContact ? <ContactEditor user={user} profile={profile} onUserUpdated={onUserUpdated} onPhoneUpdated={onPhoneUpdated} /> : <><ProfileDetail icon="mail" label="Email address" value={employee.email} /><ProfileDetail icon="phone" label="Phone number" value={employee.phone} /></>}
+                  {editingContact ? <ContactEditor user={user} profile={profile} onUserUpdated={onUserUpdated} onPhoneUpdated={onPhoneUpdated} /> : <><ProfileDetail icon="mail" label="Email address" value={employee.email} /><ProfileDetail icon="phone" label="Phone number" value={<Suspense fallback={employee.phone}><FormattedPhone value={employee.phone} /></Suspense>} /></>}
                   <ProfileDetail icon="calendar" label="Date registered" value={dateLabel(user.created_at)} />
                 </section>
                 <section className={panel + ' min-w-0 p-5 sm:p-6'}>
@@ -589,6 +588,8 @@ function App() {
   const [profile, setProfile] = useState<EmployeeProfile | null | undefined>(undefined)
   const [profileError, setProfileError] = useState('')
   const [profileRefresh, setProfileRefresh] = useState(0)
+  const [authError, setAuthError] = useState('')
+  const [authRetry, setAuthRetry] = useState(0)
   const [rememberedAccount, setRememberedAccount] = useState<RememberedAccount | null>(loadRememberedAccount)
   const [logoutBusy, setLogoutBusy] = useState(false)
   const [logoutError, setLogoutError] = useState('')
@@ -607,6 +608,7 @@ function App() {
 
   function signedIn(verifiedUser: User) {
     rememberAccount(verifiedUser)
+    setAuthError('')
     setProfile(undefined)
     setProfileError('')
     setUser(verifiedUser)
@@ -629,18 +631,20 @@ function App() {
         if (!mounted || current !== request) return
         if (error) {
           // Only an invalid/missing session signs out an already verified user.
-          if (error.name === 'AuthSessionMissingError' || [400, 401, 403].includes(error.status ?? 0)) { setProfile(undefined); setUser(null) }
-          else setUser((previous) => previous === undefined ? null : previous)
+          if (error.name === 'AuthSessionMissingError' || [400, 401, 403].includes(error.status ?? 0)) {
+            setAuthError(''); setProfile(undefined); setUser(null)
+          } else setAuthError('Could not verify your session. Check your connection and retry.')
         } else if (data.user) {
+          setAuthError('')
           rememberAccount(data.user)
           setUser(data.user)
-        } else { setProfile(undefined); setUser(null) }
+        } else { setAuthError(''); setProfile(undefined); setUser(null) }
       } catch {
-        if (mounted && current === request) setUser((previous) => previous === undefined ? null : previous)
+        if (mounted && current === request) setAuthError('Could not reach the sign-in service. Check your connection and retry.')
       }
     }
     const { data: { subscription } } = client.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT') { request++; setProfile(undefined); setUser(null) }
+      if (event === 'SIGNED_OUT') { request++; setAuthError(''); setProfile(undefined); setUser(null) }
       else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
         window.setTimeout(() => { if (mounted) void verify() }, 0)
       }
@@ -650,20 +654,25 @@ function App() {
     window.addEventListener('focus', onFocus)
     window.addEventListener('online', onFocus)
     return () => { mounted = false; subscription.unsubscribe(); window.removeEventListener('focus', onFocus); window.removeEventListener('online', onFocus) }
-  }, [])
+  }, [authRetry])
 
   useEffect(() => {
     const client = supabase
     if (!client || !user?.id) return
     let mounted = true
-    void client.from('employee_profiles')
+    void Promise.resolve(client.from('employee_profiles')
       .select('id,full_name,position,phone_number,is_active,must_change_password')
       .eq('id', user.id)
-      .maybeSingle()
+      .maybeSingle())
       .then(({ data, error }) => {
         if (!mounted) return
         setProfile(error ? null : data)
         setProfileError(error ? 'Employee profile could not be loaded.' : '')
+      })
+      .catch(() => {
+        if (!mounted) return
+        setProfile(null)
+        setProfileError('Employee profile could not be loaded. Check your connection and retry.')
       })
     return () => { mounted = false }
   }, [user?.id, profileRefresh])
@@ -673,27 +682,21 @@ function App() {
     const userId = user?.id
     if (!client || !userId) return
     let mounted = true
-    const refresh = () => {
-      setProfileRefresh(current => current + 1)
-      void client.auth.getUser().then(({ data, error }) => {
-        if (mounted && !error && data.user?.id === userId) {
-          rememberAccount(data.user)
-          setUser(data.user)
-        }
-      })
-    }
+    const refresh = () => { if (mounted && !document.hidden) setProfileRefresh(current => current + 1) }
     const channel = client.channel(`employee-profile-${userId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'employee_profiles', filter: `id=eq.${userId}` }, refresh)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'employee_profiles', filter: `id=eq.${userId}` }, refresh)
-      .subscribe(status => { if (status === 'SUBSCRIBED') refresh() })
-    const interval = window.setInterval(refresh, 30_000)
+      .subscribe()
+    const interval = window.setInterval(refresh, 60_000)
     window.addEventListener('focus', refresh)
     window.addEventListener('online', refresh)
+    document.addEventListener('visibilitychange', refresh)
     return () => {
       mounted = false
       window.clearInterval(interval)
       window.removeEventListener('focus', refresh)
       window.removeEventListener('online', refresh)
+      document.removeEventListener('visibilitychange', refresh)
       void client.removeChannel(channel)
     }
   }, [user?.id])
@@ -712,7 +715,9 @@ function App() {
     setLogoutBusy(false)
   }
 
-  if (user === undefined) return <div role="status" className="grid min-h-screen place-items-center bg-page px-5 font-sans text-sm text-muted">Checking your session…</div>
+  if (user === undefined) return authError
+    ? <main className="grid min-h-screen place-items-center bg-page px-5 font-sans text-ink"><div className="w-full max-w-md rounded-2xl border border-line bg-surface p-7 text-center shadow-sm"><h1 className="text-xl font-bold">Session check unavailable</h1><p role="alert" className="mt-3 text-sm text-muted">{authError}</p><button type="button" onClick={() => { setAuthError(''); setAuthRetry(value => value + 1) }} className={'mt-6 min-h-11 rounded-xl bg-[#4f4ff1] px-5 text-sm font-bold text-white ' + focusRing}>Retry</button></div></main>
+    : <div role="status" className="grid min-h-screen place-items-center bg-page px-5 font-sans text-sm text-muted">Checking your session…</div>
   if (!user) return <LoginScreen theme={theme} setTheme={setTheme} rememberedAccount={rememberedAccount} onForgetAccount={forgetAccount} onSignedIn={signedIn} />
   if (profile === undefined || (profile && profile.id !== user.id)) return <div role="status" className="grid min-h-screen place-items-center bg-page px-5 font-sans text-sm text-muted">Checking your employee account…</div>
   if (!profile || !profile.is_active) return (

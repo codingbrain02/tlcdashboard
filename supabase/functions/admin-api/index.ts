@@ -133,7 +133,7 @@ Deno.serve(async (request) => {
 
     if (body.action === 'list-employees') {
       if (operator.role !== 'super_admin' && operator.role !== 'admin') return reply(403, 'Administrator access required.')
-      const page = Number.isInteger(body.page) && body.page >= 0 && body.page <= 100000 ? body.page : 0
+      const page = Number.isInteger(body.page) && body.page >= 0 && body.page <= 1000 ? body.page : 0
       const nameWords = searchWords(body.name, 80)
       const positionWords = searchWords(body.position, 120)
       const status = body.status ?? 'all'
@@ -143,15 +143,8 @@ Deno.serve(async (request) => {
         return reply(400, 'Invalid employee filters.')
       }
       const size = 20
-      const administratorIds = await admin.from('admin_users').select('id', { count: 'exact' }).range(0, 999)
-      if (administratorIds.error || (administratorIds.count ?? 0) > (administratorIds.data?.length ?? 0)) {
-        return reply(503, 'Could not load employees.')
-      }
-      let query = admin.from('employee_profiles')
-        .select('id,full_name,email,position,phone_number,is_active,created_at', { count: 'exact' })
-      if (administratorIds.data?.length) {
-        query = query.not('id', 'in', `(${administratorIds.data.map(account => account.id).join(',')})`)
-      }
+      let query = admin.from('admin_employee_directory')
+        .select('id,full_name,email,position,phone_number,is_active,created_at')
       for (const word of nameWords) query = query.ilike('full_name', likeContains(word))
       for (const word of positionWords) query = query.ilike('position', likeContains(word))
       if (status !== 'all') query = query.eq('is_active', status === 'active')
@@ -163,41 +156,26 @@ Deno.serve(async (request) => {
       } else {
         query = query.order('created_at', { ascending: false })
       }
-      const listed = await query.order('id', { ascending: true }).range(page * size, page * size + size - 1)
+      const listed = await query.order('id', { ascending: true }).range(page * size, page * size + size)
       if (listed.error) return reply(503, 'Could not load employees.')
-      const employees = (listed.data ?? []).map(profile => ({
+      const employees = (listed.data ?? []).slice(0, size).map(profile => ({
         ...profile, email: profile.email ?? '',
       }))
-      return reply(200, 'Employees loaded.', { employees, hasMore: (listed.count ?? 0) > (page + 1) * size })
+      return reply(200, 'Employees loaded.', { employees, hasMore: (listed.data?.length ?? 0) > size })
     }
 
     if (body.action === 'list-attendance') {
       if (operator.role !== 'super_admin' && operator.role !== 'admin') return reply(403, 'Administrator access required.')
-      const page = Number.isInteger(body.page) && body.page >= 0 && body.page <= 100000 ? body.page : 0
+      const page = Number.isInteger(body.page) && body.page >= 0 && body.page <= 1000 ? body.page : 0
       const size = 20
-      const listed = await admin.from('attendance')
-        .select('id,user_id,clock_in,clock_out', { count: 'exact' })
-        .order('clock_in', { ascending: false }).range(page * size, page * size + size - 1)
+      const listed = await admin.from('admin_attendance_directory')
+        .select('id,user_id,full_name,clock_in,clock_out')
+        .order('clock_in', { ascending: false }).order('id', { ascending: true })
+        .range(page * size, page * size + size)
       if (listed.error) return reply(503, 'Could not load attendance.')
-      const listedShifts = listed.data ?? []
-      const adminIds = new Set<string>()
-      if (listedShifts.length) {
-        const administrators = await admin.from('admin_users').select('id')
-          .in('id', [...new Set(listedShifts.map(shift => shift.user_id))])
-        if (administrators.error) return reply(503, 'Could not load attendance.')
-        for (const account of administrators.data ?? []) adminIds.add(account.id)
-      }
-      const shifts = listedShifts.filter(shift => !adminIds.has(shift.user_id))
-      const names = new Map<string, string>()
-      if (shifts.length) {
-        const profiles = await admin.from('employee_profiles').select('id,full_name')
-          .in('id', [...new Set(shifts.map(shift => shift.user_id))])
-        if (profiles.error) return reply(503, 'Could not load attendance.')
-        for (const profile of profiles.data ?? []) names.set(profile.id, profile.full_name)
-      }
       return reply(200, 'Attendance loaded.', {
-        shifts: shifts.map(shift => ({ ...shift, full_name: names.get(shift.user_id) ?? 'Employee' })),
-        hasMore: (listed.count ?? 0) > (page + 1) * size,
+        shifts: (listed.data ?? []).slice(0, size),
+        hasMore: (listed.data?.length ?? 0) > size,
       })
     }
 
@@ -213,12 +191,9 @@ Deno.serve(async (request) => {
         return reply(400, 'Check the employee details and try again.')
       }
 
-      const [employee, administrator] = await Promise.all([
-        admin.from('employee_profiles').select('id').eq('id', employeeId).maybeSingle(),
-        admin.from('admin_users').select('id').eq('id', employeeId).maybeSingle(),
-      ])
-      if (employee.error || administrator.error) return reply(503, 'Could not check the employee account.')
-      if (!employee.data || administrator.data) return reply(404, 'Employee not found.')
+      const employee = await admin.from('admin_employee_directory').select('id').eq('id', employeeId).maybeSingle()
+      if (employee.error) return reply(503, 'Could not check the employee account.')
+      if (!employee.data) return reply(404, 'Employee not found.')
 
       const updated = await admin.from('employee_profiles')
         .update({ full_name: fullName, position, phone_number: phoneNumber })

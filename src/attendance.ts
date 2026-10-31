@@ -43,25 +43,34 @@ export function useAttendance(userId: string) {
 
       const nextAnchor = { serverMs, monotonicMs: (started + finished) / 2 }
       const monday = weekStart(serverMs)
-      const [weekResult, recentResult] = await Promise.all([
-        client.from('attendance').select('id,clock_in,clock_out')
-          .eq('user_id', userId)
-          .or(`clock_in.gte.${monday},clock_out.gte.${monday},clock_out.is.null`)
-          .order('clock_in', { ascending: false }),
-        client.from('attendance').select('id,clock_in,clock_out')
-          .eq('user_id', userId)
-          .order('clock_in', { ascending: false })
-          .limit(4),
-      ])
+      const weekResult = await client.from('attendance').select('id,clock_in,clock_out')
+        .eq('user_id', userId)
+        .or(`clock_in.gte.${monday},clock_out.gte.${monday},clock_out.is.null`)
+        .order('clock_in', { ascending: false })
       if (current !== refreshId.current) return
-      if (weekResult.error || recentResult.error) {
+      if (weekResult.error) {
         setError('Could not load attendance records. Please retry.')
         return
       }
+      const weekShifts = (weekResult.data ?? []).map(mapShift)
+      let recentShifts = weekShifts.slice(0, 4)
+      // Most weeks already contain the four recent records; only request older ones when needed.
+      if (recentShifts.length < 4) {
+        const recentResult = await client.from('attendance').select('id,clock_in,clock_out')
+          .eq('user_id', userId)
+          .order('clock_in', { ascending: false })
+          .limit(4)
+        if (current !== refreshId.current) return
+        if (recentResult.error) {
+          setError('Could not load attendance records. Please retry.')
+          return
+        }
+        recentShifts = (recentResult.data ?? []).map(mapShift)
+      }
       setAnchor(nextAnchor)
       setNow(serverMs)
-      setDashboardShifts((weekResult.data ?? []).map(mapShift))
-      setRecentShifts((recentResult.data ?? []).map(mapShift))
+      setDashboardShifts(weekShifts)
+      setRecentShifts(recentShifts)
       setError('')
     } catch {
       if (current === refreshId.current) setError('Could not reach the attendance server. Please retry.')
@@ -71,20 +80,34 @@ export function useAttendance(userId: string) {
   }, [client, userId])
 
   useEffect(() => {
-    const sync = () => { void refresh() }
-    const syncFromChange = () => { setVersion(previous => previous + 1); sync() }
+    let disposed = false
+    let pendingHistoryRefresh = false
+    const refreshToken = refreshId
+    const sync = () => {
+      if (disposed || document.hidden) return
+      if (pendingHistoryRefresh) {
+        pendingHistoryRefresh = false
+        setVersion(previous => previous + 1)
+      }
+      void refresh()
+    }
+    const syncFromChange = () => { if (!disposed) { pendingHistoryRefresh = true; sync() } }
     queueMicrotask(sync)
     const channel = client.channel(`employee-attendance-${userId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'attendance', filter: `user_id=eq.${userId}` }, syncFromChange)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'attendance', filter: `user_id=eq.${userId}` }, syncFromChange)
-      .subscribe(status => { if (status === 'SUBSCRIBED') sync() })
-    const interval = window.setInterval(sync, 30_000)
+      .subscribe()
+    const interval = window.setInterval(sync, 120_000)
     window.addEventListener('focus', sync)
     window.addEventListener('online', sync)
+    document.addEventListener('visibilitychange', sync)
     return () => {
+      disposed = true
+      refreshToken.current++
       window.clearInterval(interval)
       window.removeEventListener('focus', sync)
       window.removeEventListener('online', sync)
+      document.removeEventListener('visibilitychange', sync)
       void client.removeChannel(channel)
     }
   }, [client, refresh, userId])
@@ -104,7 +127,9 @@ export function useAttendance(userId: string) {
     setBusy(true)
     setError('')
     try {
-      const { error: actionError } = await client.rpc(active ? 'clock_out_shift' : 'clock_in_shift')
+      const { error: actionError } = active
+        ? await client.rpc('clock_out_shift_if_current', { expected_shift_id: active.id })
+        : await client.rpc('clock_in_shift')
       await refresh()
       if (actionError) setError(active
         ? 'Clock-out did not complete. Your current status has been refreshed.'
