@@ -117,6 +117,30 @@ async function changeManagedPassword(accountId: string, password: string, reques
   return false
 }
 
+async function changeOwnPassword(accountId: string, password: string, currentPassword: string, requestId: string, authorization: string) {
+  let succeeded = false
+  try {
+    const marked = await admin.auth.admin.updateUserById(accountId, {
+      app_metadata: { tlc_password_change_request: requestId },
+    })
+    if (marked.error) return false
+    // Using the caller's existing JWT preserves that Auth session. The admin
+    // updateUserById password endpoint intentionally revokes every session.
+    const changed = await fetch(`${url}/auth/v1/user`, {
+      method: 'PUT', headers: { apikey: anonKey, Authorization: authorization, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password, current_password: currentPassword }),
+    })
+    succeeded = changed.ok
+    await changed.body?.cancel().catch(() => {})
+    return succeeded
+  } finally {
+    if (!succeeded) {
+      await admin.auth.admin.updateUserById(accountId, { app_metadata: { tlc_password_change_request: null } })
+      await admin.rpc('cancel_password_request', { request_id: requestId })
+    }
+  }
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers })
   if (request.method !== 'POST') return reply(405, 'Method not allowed.')
@@ -162,11 +186,9 @@ Deno.serve(async (request) => {
 
       const authorization = await admin.rpc('request_own_password_change', { account_id: user.id })
       if (authorization.error) return commandFailure(authorization.error)
-      const updated = await changeManagedPassword(user.id, newPassword, authorization.data)
+      const updated = await changeOwnPassword(user.id, newPassword, currentPassword, authorization.data, request.headers.get('Authorization')!)
       if (!updated) return reply(503, 'Could not update password. Please retry.')
-      // Auth's database trigger atomically clears setup flags and invalidates
-      // older sessions. Do not clear a newer concurrent reset's flags here.
-      return reply(200, 'Password changed. Please sign in again.')
+      return reply(200, 'Password changed. You are still signed in on this device.')
     }
 
     if (body.action === 'change-email') {

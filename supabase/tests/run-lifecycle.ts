@@ -43,10 +43,13 @@ try {
   const results = await database.exec(await Deno.readTextFile(new URL('./employee_lifecycle.sql', import.meta.url)))
   const passwordResults = await database.exec(await Deno.readTextFile(new URL('./password_management.sql', import.meta.url)))
   const directResults = await database.exec(await Deno.readTextFile(new URL('./direct_password.sql', import.meta.url)))
+  await database.exec("select set_config('app.test_isolated_super','true',true)")
+  const ownSessionResults = await database.exec(await Deno.readTextFile(new URL('./own_password_session.sql', import.meta.url)))
   await database.exec('rollback;')
   console.log(results.at(-1)?.rows)
   console.log(passwordResults.at(-1)?.rows)
   console.log(directResults.at(-1)?.rows)
+  console.log(ownSessionResults.at(-1)?.rows)
   console.log('Isolated lifecycle database tests passed. No live data was accessed.')
 } catch (error) {
   console.error(error instanceof Error ? error.message : 'Database tests failed')
