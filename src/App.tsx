@@ -3,6 +3,7 @@ import type { User } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 import { useAttendance, useAttendanceHistory, type Shift } from './attendance'
 import PasswordSettings from './PasswordSettings'
+import PasswordSuccessToast from './PasswordSuccessToast'
 
 const PhoneNumberInput = lazy(() => import('./PhoneNumberInput'))
 const FormattedPhone = lazy(() => import('./FormattedPhone'))
@@ -291,7 +292,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
   const [page, setPage] = useState<Page>('dashboard')
   const [editingContact, setEditingContact] = useState(false)
   const [passwordOpen, setPasswordOpen] = useState(false)
-  const [passwordNotice, setPasswordNotice] = useState('')
+  const [passwordSavedVersion, setPasswordSavedVersion] = useState(0)
   const attendance = useAttendance(user.id)
   const history = useAttendanceHistory(user.id, attendance.version, page === 'profile')
   const now = attendance.now ?? 0
@@ -355,7 +356,6 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
         </header>
 
         <main className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 md:px-8 md:py-9 xl:px-12">
-          {passwordNotice && <p role="status" className="mb-4 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100">{passwordNotice}</p>}
           {logoutError && <p role="alert" className="mb-4 rounded-lg border border-rose-400 bg-rose-50 p-3 text-sm text-rose-800 dark:bg-rose-950 dark:text-rose-200">{logoutError}</p>}
           {attendance.error && <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-400 bg-rose-50 p-3 text-sm text-rose-800 dark:bg-rose-950 dark:text-rose-200"><span>{attendance.error}</span><button type="button" onClick={() => void attendance.refresh()} className={'font-bold underline ' + focusRing}>Retry</button></div>}
           {page === 'dashboard' ? (
@@ -460,7 +460,8 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
           )}
           <footer className="mt-7 text-center text-[11px] text-muted">TLC Tech Live Connect <span className="mx-1">·</span> Employee attendance</footer>
         </main>
-        {passwordOpen && <PasswordSettings onChanged={() => setPasswordNotice('Password changed successfully. You’re still signed in.')} onClose={() => setPasswordOpen(false)} />}
+        {passwordSavedVersion > 0 && <PasswordSuccessToast key={passwordSavedVersion} />}
+        {passwordOpen && <PasswordSettings onChanged={() => setPasswordSavedVersion(version => version + 1)} onClose={() => setPasswordOpen(false)} />}
       </div>
     </div>
   )

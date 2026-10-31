@@ -2,6 +2,12 @@
 
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
+@keyframes password-toast {
+  0% { opacity: 0; transform: translateY(-0.5rem); }
+  12%, 83% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-0.25rem); }
+}
+
 @layer base {
   button:not(:disabled),
   a[href],
