@@ -290,6 +290,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
   const initials = fullName.split(/\s+/).slice(0, 2).map((word: string) => word[0]?.toUpperCase()).join('') || 'E'
   const [page, setPage] = useState<Page>('dashboard')
   const [editingContact, setEditingContact] = useState(false)
+  const [passwordOpen, setPasswordOpen] = useState(false)
   const attendance = useAttendance(user.id)
   const history = useAttendanceHistory(user.id, attendance.version, page === 'profile')
   const now = attendance.now ?? 0
@@ -315,7 +316,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
 
   return (
     <div className="min-h-screen bg-page font-sans text-ink md:grid md:grid-cols-[230px_minmax(0,1fr)] xl:grid-cols-[254px_minmax(0,1fr)]">
-      <aside className="flex flex-wrap items-center gap-2 bg-[#4f4ff1] px-4 py-3 text-white dark:bg-[#27276f] md:sticky md:top-0 md:h-screen md:min-h-screen md:flex-col md:items-stretch md:gap-0 md:px-4 md:py-7" aria-label="Main navigation">
+      <aside className="flex flex-wrap items-center gap-2 bg-[#4f4ff1] px-4 py-3 text-white dark:bg-[#27276f] md:sticky md:top-0 md:h-screen md:min-h-screen md:flex-col md:items-stretch md:gap-0 md:overflow-y-auto md:px-4 md:py-7" aria-label="Main navigation">
         <div className="flex w-full items-center gap-2.5 md:mb-12 md:w-auto md:px-2">
           <span className="grid size-11 shrink-0 place-items-center rounded-[13px] border border-white/20 bg-white/20 text-[17px] font-extrabold tracking-[-1px]">TLC<span className="sr-only"> Tech Live Connect</span></span>
           <span className="whitespace-nowrap text-[13px] font-bold leading-tight md:text-[15px]">Tech Live Connect<small className="mt-1 block text-[10px] font-normal text-white/75 md:text-[11px]">Employee workspace</small></span>
@@ -325,15 +326,18 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
           <button type="button" className={navBase + (page === 'dashboard' ? ' bg-white/20 text-white ring-1 ring-white/10' : '')} onClick={() => setPage('dashboard')} aria-current={page === 'dashboard' ? 'page' : undefined}><Icon name="grid" size={18} />Dashboard</button>
           <button type="button" className={navBase + (page === 'profile' ? ' bg-white/20 text-white ring-1 ring-white/10' : '')} onClick={() => setPage('profile')} aria-current={page === 'profile' ? 'page' : undefined}><Icon name="user" size={18} />My profile</button>
         </nav>
-        <div className="mt-auto hidden md:block">
-          <div className="mb-6 rounded-2xl border border-white/15 bg-white/10 px-4 py-4">
+        <div className="w-full min-w-0 md:mt-auto">
+          <div className="mb-6 hidden rounded-2xl border border-white/15 bg-white/10 px-4 py-4 md:block">
             <span className="mb-3 grid size-8 place-items-center rounded-lg bg-white/15"><Icon name="clock" size={17} /></span>
             <strong className="block text-sm">Time that stays with you.</strong>
             <p className="mt-2 text-xs leading-relaxed text-white/80">Your active shift stays on the server when you close this page or sign out.</p>
           </div>
-          <div className="flex items-center gap-2.5 border-t border-white/20 px-1 pt-4">
-            <span className={avatar + ' size-9 text-[11px]'}>{initials}</span>
-            <span><strong className="block text-[13px]">{employee.fullName}</strong><small className="mt-0.5 block text-[11px] text-white/75">{employee.position}</small></span>
+          <div className="flex flex-wrap items-center gap-2 border-t border-white/20 px-1 pt-3 md:block md:pt-4">
+            <div className="flex min-w-0 flex-1 items-center gap-2.5"><span className={avatar + ' size-9 shrink-0 text-[11px]'}>{initials}</span><span className="min-w-0"><strong className="block truncate text-[13px]">{employee.fullName}</strong><small className="mt-0.5 block truncate text-[11px] text-white/75">{employee.position}</small></span></div>
+            <button type="button" onClick={() => setPasswordOpen(true)} aria-haspopup="dialog" className={'flex min-h-11 items-center gap-2 rounded-lg px-2 text-left text-xs font-semibold text-white/85 transition hover:bg-white/15 hover:text-white md:mt-2 md:w-full ' + focusRing}>
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4 shrink-0"><circle cx="8" cy="15" r="4" /><path d="m11 12 9-9m-3 3 3 3m-6 0 3 3" /></svg>
+              Change my password
+            </button>
           </div>
         </div>
       </aside>
@@ -441,7 +445,6 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
                   <ProfileDetail icon="grid" label="Unique user ID" value={employee.userId} />
                   {editingContact ? <ContactEditor user={user} profile={profile} onUserUpdated={onUserUpdated} onPhoneUpdated={onPhoneUpdated} /> : <><ProfileDetail icon="mail" label="Email address" value={employee.email} /><ProfileDetail icon="phone" label="Phone number" value={<Suspense fallback={employee.phone}><FormattedPhone value={employee.phone} /></Suspense>} /></>}
                   <ProfileDetail icon="calendar" label="Date registered" value={dateLabel(user.created_at)} />
-                  <div className="mt-5 sm:col-span-2"><PasswordSettings onChanged={() => void onLogout()} /></div>
                 </section>
                 <section className={panel + ' min-w-0 p-5 sm:p-6'}>
                   <div className="mb-5"><span className={eyebrow}>YOUR RECORDS</span><h2 className="text-[19px] font-semibold tracking-tight">Attendance history</h2><p className="mt-1 text-xs text-muted">Scroll to see all your shifts, newest first.</p></div>
@@ -455,6 +458,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
           )}
           <footer className="mt-7 text-center text-[11px] text-muted">TLC Tech Live Connect <span className="mx-1">·</span> Employee attendance</footer>
         </main>
+        {passwordOpen && <PasswordSettings onChanged={onLogout} onClose={() => setPasswordOpen(false)} />}
       </div>
     </div>
   )
