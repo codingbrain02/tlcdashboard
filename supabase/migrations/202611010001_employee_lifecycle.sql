@@ -1,5 +1,12 @@
 begin;
 
+-- Acquire every table needed for DDL before making changes. Fail immediately
+-- if a live request holds a conflicting lock, rather than holding one table
+-- while waiting for another in the opposite order to an Auth/attendance call.
+set local lock_timeout = '3s';
+lock table auth.users in share row exclusive mode nowait;
+lock table public.attendance, public.employee_profiles in access exclusive mode nowait;
+
 alter table public.employee_profiles
   add column revision bigint not null default 0,
   add column terminated_at timestamptz,
@@ -313,15 +320,6 @@ revoke all on function app_private.guard_terminated_auth_updates() from public, 
 create trigger block_terminated_auth_changes before update of email, encrypted_password, phone, raw_user_meta_data on auth.users
   for each row execute function app_private.guard_terminated_auth_updates();
 
-create or replace view public.admin_employee_directory with (security_invoker = true) as
-select p.id, p.full_name, p.email, p.position, p.phone_number, p.is_active, p.created_at,
-  p.terminated_at, p.termination_reason, p.termination_details, p.employment_start_date,
-  p.revision, p.access_generation, p.auth_sync_pending
-from public.employee_profiles p where not exists (select 1 from public.admin_users a where a.id = p.id);
-create or replace view public.admin_attendance_directory with (security_invoker = true) as
-select a.id, a.user_id, p.full_name, a.clock_in, a.clock_out, a.end_reason
-from public.attendance a join public.employee_profiles p on p.id = a.user_id
-where not exists (select 1 from public.admin_users administrator where administrator.id = a.user_id);
 
 alter publication supabase_realtime add table public.admin_activity_log;
 notify pgrst, 'reload schema';

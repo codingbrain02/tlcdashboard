@@ -48,7 +48,7 @@ Only the Super Administrator can edit profile details, sign-in email, registrati
 
 The database denies access immediately. The Edge Function synchronizes Auth sign-in bans through the supported Auth API. If that service fails, the employee profile exposes a retry for access synchronization; termination remains enforced by the database and old sessions remain blocked after restoration. An offline device receives the sign-out message when it reconnects. A status change does not erase data already displayed or downloaded on that device.
 
-Release order: apply `202611010001_employee_lifecycle.sql`, deploy `admin-api`, then release both frontends together. Keep the schema/audit history when reverting frontend code; reverse a termination explicitly rather than restoring an old database backup over newer records.
+Release order: apply both `202611010001_employee_lifecycle.sql` and `202611010002_employee_lifecycle_views.sql`, deploy `admin-api`, then release both frontends together. The view update runs in its own transaction to avoid lock conflicts with live directory queries. Keep the schema/audit history when reverting frontend code; reverse a termination explicitly rather than restoring an old database backup over newer records.
 
 Database regression checks run without live credentials:
 
