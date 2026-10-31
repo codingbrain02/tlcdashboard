@@ -104,6 +104,19 @@ async function syncEmployeeAccess(employeeId: string) {
   })
 }
 
+async function changeManagedPassword(accountId: string, password: string, requestId: string) {
+  const marked = await admin.auth.admin.updateUserById(accountId, {
+    app_metadata: { tlc_password_change_request: requestId },
+  })
+  if (!marked.error) {
+    const changed = await admin.auth.admin.updateUserById(accountId, { password })
+    if (!changed.error) return true
+    await admin.auth.admin.updateUserById(accountId, { app_metadata: { tlc_password_change_request: null } })
+  }
+  await admin.rpc('cancel_password_request', { request_id: requestId })
+  return false
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers })
   if (request.method !== 'POST') return reply(405, 'Method not allowed.')
@@ -130,22 +143,29 @@ Deno.serve(async (request) => {
       const proof = await verifier.auth.signInWithPassword({ email: user.email, password: currentPassword })
       if (proof.error || proof.data.user?.id !== user.id) return reply(401, 'Current password is incorrect.')
 
-      const { data: adminAccount } = await admin.from('admin_users')
+      const { data: adminAccount, error: adminError } = await admin.from('admin_users')
         .select('id,must_change_password').eq('id', user.id).maybeSingle()
+      if (proof.data.session) await verifier.auth.signOut({ scope: 'local' })
+      if (adminError) return reply(503, 'Could not verify account access.')
+      if (adminAccount) {
+        const allowed = await userClient.rpc('admin_session_allowed')
+        if (allowed.error || allowed.data !== true) return reply(403, 'Please sign in again.')
+      }
       if (!adminAccount) {
         const allowed = await userClient.rpc('employee_session_allowed')
         if (allowed.error || allowed.data !== true) return reply(403, 'Employee access required.')
       }
-      const table = adminAccount ? 'admin_users' : 'employee_profiles'
       const { data: account, error: lookupError } = adminAccount
         ? { data: adminAccount, error: null }
         : await admin.from('employee_profiles').select('id,must_change_password').eq('id', user.id).maybeSingle()
-      if (lookupError || !account?.must_change_password) return reply(403, 'Password change is not required for this account.')
+      if (lookupError || !account) return reply(403, 'Account access required.')
 
-      const updated = await admin.auth.admin.updateUserById(user.id, { password: newPassword })
-      if (updated.error) return reply(503, 'Could not update password. Please retry.')
-      const cleared = await admin.from(table).update({ must_change_password: false }).eq('id', user.id)
-      if (cleared.error) return reply(503, 'Password changed, but account setup needs support. Contact your administrator.')
+      const authorization = await admin.rpc('request_own_password_change', { account_id: user.id })
+      if (authorization.error) return commandFailure(authorization.error)
+      const updated = await changeManagedPassword(user.id, newPassword, authorization.data)
+      if (!updated) return reply(503, 'Could not update password. Please retry.')
+      // Auth's database trigger atomically clears setup flags and invalidates
+      // older sessions. Do not clear a newer concurrent reset's flags here.
       return reply(200, 'Password changed. Please sign in again.')
     }
 
@@ -183,6 +203,28 @@ Deno.serve(async (request) => {
     const { data: operator, error: roleError } = await admin.from('admin_users')
       .select('role,must_change_password').eq('id', user.id).maybeSingle()
     if (roleError || !operator || operator.must_change_password) return reply(403, 'Administrator access required.')
+    const adminSession = await userClient.rpc('admin_session_allowed')
+    if (adminSession.error || adminSession.data !== true) return reply(403, 'Please sign in again.')
+
+    if (body.action === 'reset-password') {
+      if (operator.role !== 'super_admin') return reply(403, 'Super administrator access required.')
+      const targetId = text(body.targetId, 36)
+      const currentPassword = typeof body.currentPassword === 'string' ? body.currentPassword : ''
+      if (!uuidPattern.test(targetId) || targetId === user.id || body.confirmed !== true || !currentPassword || currentPassword.length > 128) {
+        return reply(400, 'Confirm the account and enter your current password.')
+      }
+      if (!user.email) return reply(403, 'Account email is unavailable.')
+      const verifier = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } })
+      const proof = await verifier.auth.signInWithPassword({ email: user.email, password: currentPassword })
+      if (proof.error || proof.data.user?.id !== user.id) return reply(401, 'Current password is incorrect.')
+      if (proof.data.session) await verifier.auth.signOut({ scope: 'local' })
+      const authorization = await admin.rpc('request_account_password_reset', { actor_id: user.id, target_id: targetId })
+      if (authorization.error) return commandFailure(authorization.error)
+      const temporaryPassword = oneTimePassword()
+      const updated = await changeManagedPassword(targetId, temporaryPassword, authorization.data)
+      if (!updated) return reply(503, 'Could not reset the password. Please retry.')
+      return reply(200, 'Password reset. Share the temporary password privately.', { temporaryPassword })
+    }
 
     const runCommand = (employeeId: string, command: string, details: Record<string, unknown>, revision: number) =>
       admin.rpc('admin_employee_command', {

@@ -8,6 +8,8 @@ declare
   owner_id uuid;
   old_session uuid := gen_random_uuid();
   new_session uuid := gen_random_uuid();
+  admin_session uuid := gen_random_uuid();
+  owner_session uuid := gen_random_uuid();
   shift public.attendance;
   profile public.employee_profiles;
   event_count integer;
@@ -20,6 +22,9 @@ begin
     (other_employee, 'lifecycle-' || other_employee || '@example.invalid', 'authenticated', 'authenticated'),
     (administrator, 'lifecycle-' || administrator || '@example.invalid', 'authenticated', 'authenticated');
   insert into public.admin_users (id, username, role) values (administrator, 'qa_' || left(replace(administrator::text, '-', ''), 20), 'admin');
+  insert into auth.sessions (id, user_id, created_at, updated_at, aal) values
+    (admin_session, administrator, clock_timestamp(), clock_timestamp(), 'aal1'),
+    (owner_session, owner_id, clock_timestamp(), clock_timestamp(), 'aal1');
   insert into auth.sessions (id, user_id, created_at, updated_at, aal)
     values (old_session, employee, clock_timestamp(), clock_timestamp(), 'aal1');
   perform public.admin_employee_command(administrator, employee, 'create-employee',
@@ -127,7 +132,7 @@ begin
   if not exists (select 1 from public.employee_profiles where id = employee and email = 'edited-' || employee || '@example.invalid') then raise exception 'Confirmed Super Admin email edit did not synchronize'; end if;
   select * into profile from public.employee_profiles where id = employee;
   perform public.admin_employee_command(administrator, employee, 'reverse-termination', '{"reason":"Test complete"}', profile.revision);
-  perform set_config('request.jwt.claims', jsonb_build_object('sub', administrator, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', administrator, 'role', 'authenticated', 'session_id', admin_session)::text, true);
   execute 'set local role authenticated';
   if exists (select 1 from public.admin_activity_log) then raise exception 'Regular admin read audit'; end if;
   begin
@@ -140,7 +145,7 @@ begin
   update public.employee_profiles set phone_number = '+639171234569' where id = employee;
   if found then raise exception 'Old session updated phone'; end if;
   if exists (select 1 from public.employee_profiles where id = other_employee) then raise exception 'Employee read another profile'; end if;
-  perform set_config('request.jwt.claims', jsonb_build_object('sub', owner_id, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', owner_id, 'role', 'authenticated', 'session_id', owner_session)::text, true);
   if not exists (select 1 from public.admin_activity_log where employee_id = employee) then raise exception 'Super Admin could not read audit'; end if;
   execute 'reset role';
 end;

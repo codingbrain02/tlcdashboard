@@ -12,7 +12,7 @@ try {
     create table auth.users (
       id uuid primary key, email text, aud text, role text,
       phone text, encrypted_password text, email_confirmed_at timestamptz,
-      raw_user_meta_data jsonb default '{}'
+      raw_user_meta_data jsonb default '{}', raw_app_meta_data jsonb default '{}'
     );
     create table auth.sessions (
       id uuid primary key, user_id uuid references auth.users(id),
@@ -41,8 +41,10 @@ try {
   }
   await database.exec('begin;')
   const results = await database.exec(await Deno.readTextFile(new URL('./employee_lifecycle.sql', import.meta.url)))
+  const passwordResults = await database.exec(await Deno.readTextFile(new URL('./password_management.sql', import.meta.url)))
   await database.exec('rollback;')
   console.log(results.at(-1)?.rows)
+  console.log(passwordResults.at(-1)?.rows)
   console.log('Isolated lifecycle database tests passed. No live data was accessed.')
 } catch (error) {
   console.error(error instanceof Error ? error.message : 'Database tests failed')

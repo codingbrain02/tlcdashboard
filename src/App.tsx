@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type React
 import type { User } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 import { useAttendance, useAttendanceHistory, type Shift } from './attendance'
+import PasswordSettings from './PasswordSettings'
 
 const PhoneNumberInput = lazy(() => import('./PhoneNumberInput'))
 const FormattedPhone = lazy(() => import('./FormattedPhone'))
@@ -440,6 +441,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
                   <ProfileDetail icon="grid" label="Unique user ID" value={employee.userId} />
                   {editingContact ? <ContactEditor user={user} profile={profile} onUserUpdated={onUserUpdated} onPhoneUpdated={onPhoneUpdated} /> : <><ProfileDetail icon="mail" label="Email address" value={employee.email} /><ProfileDetail icon="phone" label="Phone number" value={<Suspense fallback={employee.phone}><FormattedPhone value={employee.phone} /></Suspense>} /></>}
                   <ProfileDetail icon="calendar" label="Date registered" value={dateLabel(user.created_at)} />
+                  <div className="mt-5 sm:col-span-2"><PasswordSettings onChanged={() => void onLogout()} /></div>
                 </section>
                 <section className={panel + ' min-w-0 p-5 sm:p-6'}>
                   <div className="mb-5"><span className={eyebrow}>YOUR RECORDS</span><h2 className="text-[19px] font-semibold tracking-tight">Attendance history</h2><p className="mt-1 text-xs text-muted">Scroll to see all your shifts, newest first.</p></div>

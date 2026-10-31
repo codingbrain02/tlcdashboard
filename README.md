@@ -59,6 +59,14 @@ deno test supabase/functions/admin-api/employee-access.test.ts
 
 The isolated PostgreSQL runner applies the real schema migrations and access policies with synthetic Auth tables/users. The hosted check also runs the migration and SQL tests inside one transaction ending in ROLLBACK. pg_trgm performance indexes are checked on hosted Postgres; the isolated engine skips that extension.
 
+### Password management
+
+Employees can change their own password under My profile. Administrators and the Super Administrator use Change my password in the admin workspace. Self-service changes require the current password and a different new password of at least 12 characters, followed by a new sign-in.
+
+Only the Super Administrator can reset someone else's password: Employees > View profile > Reset password, or Administrators > Reset password. Confirmation requires the Super Administrator's current password. A server-generated temporary password appears once, must be shared privately, and must be changed at next sign-in. Passwords are never retrievable or included in activity logs. A reset does not stop a shift or reactivate a terminated employee.
+
+Apply `202611010003_password_management.sql` and `202611010004_auth_password_transaction_order.sql` before deploying the updated `admin-api` and both frontends. Auth's password transaction applies setup flags, session cutoffs and the success audit atomically, using a server-only operation marker established before Auth writes the password. Old administrator and employee sessions cannot regain access after setup completes. SQL regression coverage includes unauthorized resets, request replay, Auth write ordering and rehashes, terminated accounts, setup flags, audit records and shift preservation. Run authenticated browser tests using disposable accounts before treating the release as verified end-to-end.
+
 ### Deployment safeguards
 
 - The employee and admin apps contain private account data, so both send `noindex` headers and meta tags. Search-engine optimization belongs on a separate public website, not behind these sign-in screens.
