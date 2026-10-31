@@ -4,13 +4,16 @@ import { supabase } from './supabase'
 import { useAttendance, useAttendanceHistory, type Shift } from './attendance'
 import PasswordSettings from './PasswordSettings'
 import PasswordSuccessToast from './PasswordSuccessToast'
+import EmojiAvatar from './EmojiAvatar'
+import { getAvatarEmoji } from './emojiAvatars'
 
 const PhoneNumberInput = lazy(() => import('./PhoneNumberInput'))
 const FormattedPhone = lazy(() => import('./FormattedPhone'))
+const EmojiAvatarPicker = lazy(() => import('./EmojiAvatarPicker'))
 
 type Page = 'dashboard' | 'profile'
 type Theme = 'light' | 'dark'
-type RememberedAccount = { email: string; name: string }
+type RememberedAccount = { email: string; name: string; userId?: string; avatarEmoji: string }
 type EmployeeProfile = {
   id: string
   full_name: string
@@ -19,6 +22,7 @@ type EmployeeProfile = {
   is_active: boolean
   must_change_password: boolean
   terminated_at: string | null
+  avatar_emoji: string
 }
 
 const THEME_KEY = 'tlc-preview-theme-v1'
@@ -27,10 +31,14 @@ const REMEMBERED_ACCOUNT_KEY = 'tlc-remembered-account-v1'
 function accountFromUser(user: User): RememberedAccount | null {
   if (!user.email) return null
   const fullName = user.user_metadata?.full_name
+  const saved = loadRememberedAccount()
+  const sameAccount = saved?.userId === user.id || (!saved?.userId && saved?.email === user.email)
   return {
     email: user.email,
-    name: typeof fullName === 'string' && fullName.trim()
+    name: sameAccount && saved ? saved.name : typeof fullName === 'string' && fullName.trim()
       ? fullName.trim() : user.email.split('@')[0],
+    userId: user.id,
+    avatarEmoji: sameAccount ? getAvatarEmoji(saved?.avatarEmoji) : getAvatarEmoji(null),
   }
 }
 
@@ -42,7 +50,9 @@ function loadRememberedAccount(): RememberedAccount | null {
     if (typeof value !== 'object' || value === null || !('email' in value) || !('name' in value)) return null
     if (typeof value.email !== 'string' || typeof value.name !== 'string') return null
     if (!value.email.includes('@') || value.email.length > 254 || value.name.length > 100) return null
-    return { email: value.email, name: value.name }
+    return { email: value.email, name: value.name,
+      userId: 'userId' in value && typeof value.userId === 'string' ? value.userId : undefined,
+      avatarEmoji: getAvatarEmoji('avatarEmoji' in value ? value.avatarEmoji : null) }
   } catch {
     return null
   }
@@ -270,13 +280,14 @@ function ContactEditor({ user, profile, onUserUpdated, onPhoneUpdated }: {
   </div>
 }
 
-function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPhoneUpdated, onLogout, logoutBusy, logoutError }: {
+function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPhoneUpdated, onAvatarUpdated, onLogout, logoutBusy, logoutError }: {
   user: User
   profile: EmployeeProfile
   theme: Theme
   setTheme: (theme: Theme) => void
   onUserUpdated: (updated: User) => void
   onPhoneUpdated: (phone: string) => void
+  onAvatarUpdated: (emoji: string) => void
   onLogout: () => void
   logoutBusy: boolean
   logoutError: string
@@ -289,11 +300,11 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
     email: user.email || 'Not provided',
     phone: profile.phone_number?.trim() || 'Not provided',
   }
-  const initials = fullName.split(/\s+/).slice(0, 2).map((word: string) => word[0]?.toUpperCase()).join('') || 'E'
   const [page, setPage] = useState<Page>('dashboard')
   const [editingContact, setEditingContact] = useState(false)
   const [passwordOpen, setPasswordOpen] = useState(false)
   const [passwordSavedVersion, setPasswordSavedVersion] = useState(0)
+  const [avatarOpen, setAvatarOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const refreshBusy = useRef(false)
   const attendance = useAttendance(user.id)
@@ -355,7 +366,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
             <p className="mt-2 text-xs leading-relaxed text-white/80">Your active shift stays on the server when you close this page or sign out.</p>
           </div>
           <div className="grid grid-cols-2 items-center gap-x-2 gap-y-1 border-t border-white/20 px-1 pt-3 md:block md:pt-4">
-            <button type="button" onClick={openProfile} aria-label="Open my profile" className={'col-span-2 flex min-h-11 min-w-0 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/15 ' + focusRing}><span className={avatar + ' size-9 shrink-0 text-[11px]'}>{initials}</span><span className="min-w-0"><strong className="block truncate text-[13px]">{employee.fullName}</strong><small className="mt-0.5 block truncate text-[11px] text-white/75">{employee.position}</small></span></button>
+            <div className="col-span-2 flex min-w-0 items-center gap-2.5 px-2 py-1.5"><button type="button" onClick={() => setAvatarOpen(true)} aria-label="Change profile emoji from sidebar" aria-haspopup="dialog" title="Change profile emoji" className={'shrink-0 rounded-full transition-shadow hover:ring-2 hover:ring-white/40 ' + focusRing}><EmojiAvatar value={profile.avatar_emoji} className={avatar + ' size-9 text-xl'} /></button><button type="button" onClick={openProfile} aria-label="Open my profile" className={'min-h-11 min-w-0 flex-1 rounded-lg text-left transition-colors hover:bg-white/15 ' + focusRing}><strong className="block truncate text-[13px]">{employee.fullName}</strong><small className="mt-0.5 block truncate text-[11px] text-white/75">{employee.position}</small></button></div>
             <button type="button" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={'Switch to ' + (theme === 'light' ? 'dark' : 'light') + ' mode'} className={'flex min-h-11 min-w-0 items-center gap-2 rounded-lg px-2 text-left text-xs font-semibold text-white/85 transition hover:bg-white/15 hover:text-white md:mt-2 md:w-full ' + focusRing}><Icon name={theme === 'light' ? 'sun' : 'moon'} size={16} /><span>Appearance</span><span className="ml-auto rounded-md border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] text-white/80">{theme === 'light' ? 'Light' : 'Dark'}</span></button>
             <button type="button" onClick={() => setPasswordOpen(true)} aria-haspopup="dialog" className={'flex min-h-11 items-center gap-2 rounded-lg px-2 text-left text-xs font-semibold text-white/85 transition hover:bg-white/15 hover:text-white md:mt-2 md:w-full ' + focusRing}>
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4 shrink-0"><circle cx="8" cy="15" r="4" /><path d="m11 12 9-9m-3 3 3 3m-6 0 3 3" /></svg>
@@ -371,7 +382,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
           <div className="flex shrink-0 items-center gap-2 sm:gap-4">
             <span className={'inline-flex items-center gap-2 whitespace-nowrap rounded-full px-2.5 py-1.5 text-[11px] font-semibold sm:px-3 sm:text-xs ' + (attendance.error ? 'bg-amber-50 text-amber-800 dark:bg-amber-400/10 dark:text-amber-200' : active ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-200' : 'bg-soft text-muted')} title={attendance.error ? 'Attendance could not be refreshed. Retry below.' : active ? 'Your shift is in progress' : 'You have no active shift'}><span className="size-1.5 rounded-full bg-current" />{attendance.error ? 'Sync unavailable' : active ? 'On duty' : 'Off duty'}</span>
             <button type="button" disabled={logoutBusy} onClick={onLogout} className={'rounded-lg border border-line bg-surface px-3 py-2 text-xs font-bold text-ink hover:bg-soft disabled:opacity-60 ' + focusRing}>{logoutBusy ? 'Signing out…' : 'Sign out'}</button>
-            <button type="button" onClick={openProfile} aria-label="Open my profile from header" title="My profile" className={avatar + ' hidden size-9 text-[11px] transition-shadow hover:ring-2 hover:ring-brand/30 sm:grid ' + focusRing}>{initials}</button>
+            <button type="button" onClick={() => setAvatarOpen(true)} aria-label="Change profile emoji from header" aria-haspopup="dialog" title="Change profile emoji" className={'hidden shrink-0 rounded-full transition-shadow hover:ring-2 hover:ring-brand/30 sm:block ' + focusRing}><EmojiAvatar value={profile.avatar_emoji} className={avatar + ' size-9 text-xl'} /></button>
           </div>
         </header>
 
@@ -428,7 +439,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
                   <div className={panel + ' p-5'}>
                     <div className="flex items-center justify-between gap-3"><h2 className="text-[19px] font-semibold tracking-tight">Your profile</h2><button type="button" className={'inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-bold text-brand hover:underline ' + focusRing} onClick={() => setPage('profile')}>View profile<Icon name="arrow" size={15} /></button></div>
                     <div className="mt-6 flex items-center gap-3">
-                      <span className={avatar + ' size-14 text-[17px]'}>{initials}</span>
+                      <button type="button" onClick={() => setAvatarOpen(true)} aria-label="Change profile emoji from dashboard" aria-haspopup="dialog" title="Change profile emoji" className={'shrink-0 rounded-full transition-shadow hover:ring-2 hover:ring-brand/30 ' + focusRing}><EmojiAvatar value={profile.avatar_emoji} className={avatar + ' size-14 text-3xl'} /></button>
                       <div><strong className="block text-[15px]">{employee.fullName}</strong><span className="mt-0.5 block text-xs text-muted">{employee.position}</span><small className="mt-1 block text-[11px] font-bold text-brand">{employee.userId}</small></div>
                     </div>
                     <div className="my-4 border-t border-line" />
@@ -457,7 +468,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
             <>
               <div className="mb-7"><h1 className="text-[27px] leading-tight font-bold tracking-[-0.04em] sm:text-[31px]">My profile</h1><p className="mt-2 text-[15px] text-muted">Your details and complete attendance history, all in one place.</p></div>
               <div className="mb-5 flex min-h-36 flex-wrap items-center gap-4 rounded-2xl bg-[linear-gradient(110deg,#5552ee,#3f42d6)] p-5 text-white sm:p-7">
-                <span className="grid size-16 shrink-0 place-items-center rounded-full border-2 border-white/30 bg-white/20 text-xl font-bold sm:size-[75px]">{initials}</span>
+                <button type="button" onClick={() => setAvatarOpen(true)} aria-label="Change profile emoji" aria-haspopup="dialog" title="Change profile emoji" className={'group relative shrink-0 rounded-full transition-shadow hover:ring-2 hover:ring-white/40 ' + focusRing}><EmojiAvatar value={profile.avatar_emoji} className="size-16 border-2 border-white/30 bg-white/20 text-4xl sm:size-[75px]" /><span aria-hidden="true" className="absolute -bottom-0.5 -right-0.5 grid size-6 place-items-center rounded-full border border-white/30 bg-white text-[#4f46e5] shadow-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-3"><path d="m15 4 5 5M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15l-1 5Z" /></svg></span></button>
                 <div><h2 className="text-[25px] font-semibold tracking-tight">{employee.fullName}</h2><p className="text-[13px] text-white/85">{employee.position}</p></div>
                 <span className="max-w-full break-all rounded-lg border border-white/30 bg-white/15 px-3 py-2 text-xs font-bold sm:ml-auto">{employee.userId}</span>
               </div>
@@ -484,6 +495,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
         </main>
         {passwordSavedVersion > 0 && <PasswordSuccessToast key={passwordSavedVersion} />}
         {passwordOpen && <PasswordSettings onChanged={() => setPasswordSavedVersion(version => version + 1)} onClose={() => setPasswordOpen(false)} />}
+        {avatarOpen && <Suspense fallback={<p role="status" className="fixed bottom-5 right-5 z-50 rounded-xl border border-line bg-surface p-3 text-sm shadow-lg">Loading emoji picker…</p>}><EmojiAvatarPicker value={profile.avatar_emoji} onSaved={onAvatarUpdated} onClose={() => setAvatarOpen(false)} /></Suspense>}
       </div>
     </div>
   )
@@ -555,7 +567,7 @@ function LoginScreen({ theme, setTheme, rememberedAccount, onForgetAccount, onSi
             <section aria-label="Remembered account" className="mt-9 max-w-md">
               <div className="mb-3 flex items-center justify-between gap-3"><span className="text-[11px] font-extrabold tracking-[0.14em] text-muted uppercase">Your account</span><button type="button" onClick={onForgetAccount} className={'text-xs font-semibold text-muted underline-offset-2 hover:text-brand hover:underline ' + focusRing}>Remove from this device</button></div>
               <button type="button" onClick={selectAccount} className={'flex w-full min-w-0 items-center gap-4 rounded-2xl border border-line bg-surface p-4 text-left shadow-sm transition-colors hover:border-brand hover:bg-soft sm:p-5 ' + focusRing}>
-                <span className={avatar + ' size-12 text-sm'}>{rememberedAccount.name.split(/\s+/).slice(0, 2).map((word) => word[0]?.toUpperCase()).join('')}</span>
+                <EmojiAvatar value={rememberedAccount.avatarEmoji} className={avatar + ' size-12 text-2xl'} />
                 <span className="min-w-0 flex-1"><strong className="block truncate text-sm text-ink">Continue as {rememberedAccount.name}</strong><span className="mt-1 block truncate text-xs text-muted">{rememberedAccount.email}</span></span>
                 <span className="shrink-0 text-brand"><Icon name="arrow" size={18} /></span>
               </button>
@@ -629,9 +641,10 @@ function App() {
   const [logoutError, setLogoutError] = useState('')
   const [accessNotice, setAccessNotice] = useState('')
 
-  function rememberAccount(verifiedUser: User) {
+  function rememberAccount(verifiedUser: User, details?: Pick<EmployeeProfile, 'full_name' | 'avatar_emoji'>) {
     const account = accountFromUser(verifiedUser)
     if (!account) return
+    if (details) { account.name = details.full_name.trim() || account.name; account.avatarEmoji = getAvatarEmoji(details.avatar_emoji) }
     setRememberedAccount(account)
     try { localStorage.setItem(REMEMBERED_ACCOUNT_KEY, JSON.stringify(account)) } catch { /* Remembering the account is optional. */ }
   }
@@ -697,7 +710,7 @@ function App() {
     if (!client || !user?.id) return
     let mounted = true
     void Promise.all([client.from('employee_profiles')
-      .select('id,full_name,position,phone_number,is_active,must_change_password,terminated_at')
+      .select('id,full_name,position,phone_number,is_active,must_change_password,terminated_at,avatar_emoji')
       .eq('id', user.id)
       .maybeSingle(), client.rpc('employee_session_allowed')])
       .then(([{ data, error }, allowed]) => {
@@ -711,6 +724,7 @@ function App() {
         if (allowed.error && data?.is_active) {
           setProfile(null); setProfileError('Could not verify account access. Check your connection and retry.'); return
         }
+        if (data && !error) rememberAccount(user, data)
         setProfile(error ? null : data)
         setProfileError(error ? 'Employee profile could not be loaded.' : '')
       })
@@ -720,7 +734,7 @@ function App() {
         setProfileError('Employee profile could not be loaded. Check your connection and retry.')
       })
     return () => { mounted = false }
-  }, [user?.id, profileRefresh])
+  }, [user, profileRefresh])
 
   useEffect(() => {
     const client = supabase
@@ -791,7 +805,7 @@ function App() {
     </div>
   )
   if (profile.must_change_password) return <FirstPasswordChange onSignOut={() => void signOut()} onDone={() => setProfileRefresh(value => value + 1)} />
-  return <EmployeeDashboard key={user.id} user={user} profile={profile} theme={theme} setTheme={setTheme} onUserUpdated={updated => { rememberAccount(updated); setUser(updated) }} onPhoneUpdated={phone => setProfile(current => current ? { ...current, phone_number: phone } : current)} onLogout={signOut} logoutBusy={logoutBusy} logoutError={logoutError} />
+  return <EmployeeDashboard key={user.id} user={user} profile={profile} theme={theme} setTheme={setTheme} onUserUpdated={updated => { rememberAccount(updated); setUser(updated) }} onPhoneUpdated={phone => setProfile(current => current ? { ...current, phone_number: phone } : current)} onAvatarUpdated={emoji => { setProfile(current => current ? { ...current, avatar_emoji: emoji } : current); rememberAccount(user, { full_name: profile.full_name, avatar_emoji: emoji }) }} onLogout={signOut} logoutBusy={logoutBusy} logoutError={logoutError} />
 }
 
 export default App

@@ -63,7 +63,7 @@ async function authenticatedUser(request: Request) {
   return error ? null : data.user
 }
 
-const employeeColumns = 'id,full_name,email,position,phone_number,is_active,created_at,terminated_at,termination_reason,termination_details,employment_start_date,revision,access_generation,auth_sync_pending'
+const employeeColumns = 'id,full_name,email,position,phone_number,is_active,created_at,terminated_at,termination_reason,termination_details,employment_start_date,revision,access_generation,auth_sync_pending,avatar_emoji'
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function commandFailure(error: { code?: string; message?: string }) {

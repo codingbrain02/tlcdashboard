@@ -29,6 +29,8 @@ After the migration, sign in and verify that clock-in creates one `attendance` r
 
 The dashboard fetches records overlapping the employee's current local Monday–Sunday week for its totals, plus recent shifts. The profile history loads older records in pages as the fixed-height log is scrolled. The displayed clock uses a server timestamp plus the browser's monotonic elapsed time between resynchronizations. The device's wall clock does not set attendance timestamps.
 
+Employees can click their avatar to choose from 48 preset emojis. Personal photos, uploads, image URLs and arbitrary text are not supported. The selected emoji is saved on the employee profile, appears across the employee app and remembered login shortcut, and updates in the admin directory/profile through the existing realtime subscriptions. Only the employee's active, fully configured session can use the avatar RPC; it cannot change anyone else's picture or any other profile field. Apply migrations `202611010007_employee_emoji_avatar.sql` and `202611010008_employee_emoji_directory.sql`, then deploy `admin-api` before releasing the frontends. Avatar changes do not affect passwords, sessions or attendance.
+
 Supabase keeps the Auth session in this browser. Signing out ends this device's session but does not end an open shift. The login screen remembers only the last account's name and email as a shortcut; its password is always required after sign-out. Use **Remove from this device** to clear that shortcut. Browser storage clearing, account revocation, and Auth session policies can still require a new login.
 
 ## Deployment notes
