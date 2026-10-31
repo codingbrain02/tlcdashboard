@@ -108,6 +108,7 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
     case 'mail': return <svg {...props}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m4 7 8 6 8-6" /></svg>
     case 'phone': return <svg {...props}><path d="M5 3h4l1 5-2 2a15 15 0 0 0 6 6l2-2 5 1v4a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2Z" /></svg>
     case 'briefcase': return <svg {...props}><rect x="3" y="7" width="18" height="14" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13a17 17 0 0 0 18 0" /></svg>
+    case 'refresh': return <svg {...props}><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 7a7 7 0 0 1 11.6-2L20 8M4 16l2.3 3A7 7 0 0 0 17.9 17" /></svg>
     default: return null
   }
 }
@@ -293,10 +294,13 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
   const [editingContact, setEditingContact] = useState(false)
   const [passwordOpen, setPasswordOpen] = useState(false)
   const [passwordSavedVersion, setPasswordSavedVersion] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const refreshBusy = useRef(false)
   const attendance = useAttendance(user.id)
   const history = useAttendanceHistory(user.id, attendance.version, page === 'profile')
   const now = attendance.now ?? 0
   const active = attendance.active
+  const latestShift = active ?? attendance.recentShifts[0] ?? null
   const today = new Date(now)
   today.setHours(0, 0, 0, 0)
   const monday = new Date(today)
@@ -304,6 +308,21 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
   const todayTotal = attendance.dashboardShifts.reduce((sum, shift) => sum + shiftOverlap(shift, today.getTime(), now), 0)
   const weekTotal = attendance.dashboardShifts.reduce((sum, shift) => sum + shiftOverlap(shift, monday.getTime(), now), 0)
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local time'
+
+  function openProfile() {
+    setPage('profile')
+    window.scrollTo(0, 0)
+  }
+
+  async function refreshDashboard() {
+    if (refreshBusy.current) return
+    refreshBusy.current = true
+    setRefreshing(true)
+    setPage('dashboard')
+    window.scrollTo(0, 0)
+    try { await attendance.refresh() }
+    finally { refreshBusy.current = false; setRefreshing(false) }
+  }
 
   if (attendance.loading && attendance.now === null) {
     return <div role="status" className="grid min-h-screen place-items-center bg-page px-5 font-sans text-sm text-muted">Loading your attendance…</div>
@@ -319,10 +338,11 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
   return (
     <div className="min-h-screen bg-page font-sans text-ink md:grid md:grid-cols-[230px_minmax(0,1fr)] xl:grid-cols-[254px_minmax(0,1fr)]">
       <aside className="flex flex-wrap items-center gap-2 bg-[#4f4ff1] px-4 py-3 text-white dark:bg-[#27276f] md:sticky md:top-0 md:h-screen md:min-h-screen md:flex-col md:items-stretch md:gap-0 md:overflow-y-auto md:px-4 md:py-7" aria-label="Main navigation">
-        <div className="flex w-full items-center gap-2.5 md:mb-12 md:w-auto md:px-2">
-          <span className="grid size-11 shrink-0 place-items-center rounded-[13px] border border-white/20 bg-white/20 text-[17px] font-extrabold tracking-[-1px]">TLC<span className="sr-only"> Tech Live Connect</span></span>
-          <span className="whitespace-nowrap text-[13px] font-bold leading-tight md:text-[15px]">Tech Live Connect<small className="mt-1 block text-[10px] font-normal text-white/75 md:text-[11px]">Employee workspace</small></span>
-        </div>
+        <button type="button" onClick={() => void refreshDashboard()} disabled={refreshing} aria-label="Refresh dashboard" aria-busy={refreshing} title="Refresh dashboard" className={'flex w-full items-center gap-2.5 rounded-xl text-left transition-colors hover:bg-white/10 disabled:cursor-progress md:mb-12 md:w-auto md:px-2 ' + focusRing}>
+          <span className="grid size-11 shrink-0 place-items-center rounded-[13px] border border-white/20 bg-white/20 text-[17px] font-extrabold tracking-[-1px]">{refreshing ? <span className="motion-safe:animate-spin"><Icon name="refresh" size={21} /></span> : 'TLC'}</span>
+          <span className="min-w-0 text-[13px] font-bold leading-tight md:text-[15px]">Tech Live Connect<small className="mt-1 block text-[10px] font-normal text-white/75 md:text-[11px]">Employee workspace</small></span>
+        </button>
+        <span role="status" className="sr-only">{refreshing ? 'Refreshing dashboard…' : ''}</span>
         <span className="mb-3 hidden px-4 text-[10px] font-bold tracking-[0.18em] text-white/70 md:block">WORKSPACE</span>
         <nav className="grid w-full min-w-0 grid-cols-2 gap-1 md:flex md:flex-col md:gap-2" aria-label="Pages">
           <button type="button" className={navBase + (page === 'dashboard' ? ' bg-white/20 text-white ring-1 ring-white/10' : '')} onClick={() => setPage('dashboard')} aria-current={page === 'dashboard' ? 'page' : undefined}><Icon name="grid" size={18} />Dashboard</button>
@@ -334,8 +354,9 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
             <strong className="block text-sm">Time that stays with you.</strong>
             <p className="mt-2 text-xs leading-relaxed text-white/80">Your active shift stays on the server when you close this page or sign out.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 border-t border-white/20 px-1 pt-3 md:block md:pt-4">
-            <div className="flex min-w-0 flex-1 items-center gap-2.5"><span className={avatar + ' size-9 shrink-0 text-[11px]'}>{initials}</span><span className="min-w-0"><strong className="block truncate text-[13px]">{employee.fullName}</strong><small className="mt-0.5 block truncate text-[11px] text-white/75">{employee.position}</small></span></div>
+          <div className="grid grid-cols-2 items-center gap-x-2 gap-y-1 border-t border-white/20 px-1 pt-3 md:block md:pt-4">
+            <button type="button" onClick={openProfile} aria-label="Open my profile" className={'col-span-2 flex min-h-11 min-w-0 w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/15 ' + focusRing}><span className={avatar + ' size-9 shrink-0 text-[11px]'}>{initials}</span><span className="min-w-0"><strong className="block truncate text-[13px]">{employee.fullName}</strong><small className="mt-0.5 block truncate text-[11px] text-white/75">{employee.position}</small></span></button>
+            <button type="button" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={'Switch to ' + (theme === 'light' ? 'dark' : 'light') + ' mode'} className={'flex min-h-11 min-w-0 items-center gap-2 rounded-lg px-2 text-left text-xs font-semibold text-white/85 transition hover:bg-white/15 hover:text-white md:mt-2 md:w-full ' + focusRing}><Icon name={theme === 'light' ? 'sun' : 'moon'} size={16} /><span>Appearance</span><span className="ml-auto rounded-md border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] text-white/80">{theme === 'light' ? 'Light' : 'Dark'}</span></button>
             <button type="button" onClick={() => setPasswordOpen(true)} aria-haspopup="dialog" className={'flex min-h-11 items-center gap-2 rounded-lg px-2 text-left text-xs font-semibold text-white/85 transition hover:bg-white/15 hover:text-white md:mt-2 md:w-full ' + focusRing}>
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4 shrink-0"><circle cx="8" cy="15" r="4" /><path d="m11 12 9-9m-3 3 3 3m-6 0 3 3" /></svg>
               Change my password
@@ -345,13 +366,12 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
       </aside>
 
       <div className="min-w-0">
-        <header className="flex h-16 items-center justify-between border-b border-line bg-surface px-4 md:h-[78px] md:px-8 xl:px-12">
-          <span className="text-xs text-muted md:text-[13px]">Workspace <span className="mx-2 text-muted/60">/</span> <strong className="font-semibold text-ink">{page === 'dashboard' ? 'Dashboard' : 'My profile'}</strong></span>
-          <div className="flex items-center gap-2 sm:gap-4">
-            <span className="hidden items-center gap-2 rounded-full border border-line bg-soft px-3 py-1.5 text-xs font-semibold text-muted min-[361px]:inline-flex"><span className="size-1.5 rounded-full bg-[#9f96ff]" />Employee account</span>
-            <button type="button" className={'grid size-9 place-items-center rounded-lg border border-line bg-surface text-muted transition-colors hover:bg-soft hover:text-brand ' + focusRing} onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={'Switch to ' + (theme === 'light' ? 'dark' : 'light') + ' mode'} title={'Switch to ' + (theme === 'light' ? 'dark' : 'light') + ' mode'}><Icon name={theme === 'light' ? 'moon' : 'sun'} size={19} /></button>
+        <header className="flex h-16 items-center justify-between gap-3 border-b border-line bg-surface px-4 md:h-[78px] md:px-8 xl:px-12">
+          <span className="min-w-0 truncate text-xs text-muted md:text-[13px]">Workspace <span className="mx-2 text-muted/60">/</span> <strong className="font-semibold text-ink">{page === 'dashboard' ? 'Dashboard' : 'My profile'}</strong></span>
+          <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+            <span className={'inline-flex items-center gap-2 whitespace-nowrap rounded-full px-2.5 py-1.5 text-[11px] font-semibold sm:px-3 sm:text-xs ' + (attendance.error ? 'bg-amber-50 text-amber-800 dark:bg-amber-400/10 dark:text-amber-200' : active ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-200' : 'bg-soft text-muted')} title={attendance.error ? 'Attendance could not be refreshed. Retry below.' : active ? 'Your shift is in progress' : 'You have no active shift'}><span className="size-1.5 rounded-full bg-current" />{attendance.error ? 'Sync unavailable' : active ? 'On duty' : 'Off duty'}</span>
             <button type="button" disabled={logoutBusy} onClick={onLogout} className={'rounded-lg border border-line bg-surface px-3 py-2 text-xs font-bold text-ink hover:bg-soft disabled:opacity-60 ' + focusRing}>{logoutBusy ? 'Signing out…' : 'Sign out'}</button>
-            <span className={avatar + ' hidden size-9 text-[11px] sm:grid'}>{initials}</span>
+            <button type="button" onClick={openProfile} aria-label="Open my profile from header" title="My profile" className={avatar + ' hidden size-9 text-[11px] transition-shadow hover:ring-2 hover:ring-brand/30 sm:grid ' + focusRing}>{initials}</button>
           </div>
         </header>
 
@@ -362,7 +382,6 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
             <>
               <div className="mb-7 flex flex-col items-start gap-3 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                  <span className={eyebrow}>EMPLOYEE DASHBOARD</span>
                   <h1 className="text-[27px] leading-tight font-bold tracking-[-0.04em] sm:text-[31px]">Good {greeting}, {employee.fullName.split(' ')[0]} <span className="text-[#eeb256]" aria-hidden="true">✳</span></h1>
                   <p className={'mt-2 text-[15px] ' + muted}>Here’s your workday at a glance.</p>
                 </div>
@@ -416,10 +435,13 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
                     <div className="flex items-center gap-2.5 break-all text-xs text-muted"><span className="text-brand"><Icon name="mail" size={17} /></span>{employee.email}</div>
                     <div className="mt-3 flex items-center gap-2.5 text-xs text-muted"><span className="text-brand"><Icon name="phone" size={17} /></span>{employee.phone}</div>
                   </div>
-                  <div className="flex gap-3 rounded-[13px] border border-[#e4e2ff] bg-[#f0efff] p-4 text-[#42418a] dark:border-[#46447d] dark:bg-[#302f5c] dark:text-[#efedff]">
-                    <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-[#dedbff] text-[#5e58d8]">✦</span>
-                    <div><strong className="text-xs">One less thing to worry about</strong><p className="mt-1 text-[11px] leading-relaxed text-[#686897] dark:text-[#c0bfe0]">Your shift is saved in Supabase. Closing the page won’t reset its elapsed time.</p></div>
-                  </div>
+                  <section className={panel + ' p-5'} aria-labelledby="shift-details-title">
+                    <div className="flex items-center justify-between gap-3"><h2 id="shift-details-title" className="text-sm font-semibold">{active ? 'Current shift' : 'Last shift'}</h2><button type="button" onClick={openProfile} className={'inline-flex items-center gap-1 text-xs font-bold text-brand hover:underline ' + focusRing}>View records<Icon name="arrow" size={14} /></button></div>
+                    {latestShift ? <dl className="mt-4 grid grid-cols-2 gap-4">
+                      <div><dt className="text-[11px] text-muted">Clock in</dt><dd className="mt-1 text-sm font-semibold"><time dateTime={latestShift.clockIn}>{timeLabel(latestShift.clockIn)}</time><span className="mt-1 block text-[10px] font-normal text-muted">{dateLabel(latestShift.clockIn)}</span></dd></div>
+                      <div><dt className="text-[11px] text-muted">{latestShift.endReason === 'terminated' ? 'Shift ended' : 'Clock out'}</dt><dd className="mt-1 text-sm font-semibold">{latestShift.clockOut ? <><time dateTime={latestShift.clockOut}>{timeLabel(latestShift.clockOut)}</time><span className="mt-1 block text-[10px] font-normal text-muted">{dateLabel(latestShift.clockOut)}</span></> : <span className="text-emerald-700 dark:text-emerald-300">In progress</span>}</dd></div>
+                    </dl> : <p className="mt-3 text-xs leading-5 text-muted">No attendance recorded yet. Your first clock-in will appear here.</p>}
+                  </section>
                 </div>
               </section>
 
@@ -433,15 +455,15 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
             </>
           ) : (
             <>
-              <div className="mb-7"><span className={eyebrow}>EMPLOYEE PROFILE</span><h1 className="text-[27px] leading-tight font-bold tracking-[-0.04em] sm:text-[31px]">My profile</h1><p className="mt-2 text-[15px] text-muted">Your details and complete attendance history, all in one place.</p></div>
+              <div className="mb-7"><h1 className="text-[27px] leading-tight font-bold tracking-[-0.04em] sm:text-[31px]">My profile</h1><p className="mt-2 text-[15px] text-muted">Your details and complete attendance history, all in one place.</p></div>
               <div className="mb-5 flex min-h-36 flex-wrap items-center gap-4 rounded-2xl bg-[linear-gradient(110deg,#5552ee,#3f42d6)] p-5 text-white sm:p-7">
                 <span className="grid size-16 shrink-0 place-items-center rounded-full border-2 border-white/30 bg-white/20 text-xl font-bold sm:size-[75px]">{initials}</span>
-                <div><span className="text-[10px] font-extrabold tracking-[0.15em] text-white/80">EMPLOYEE PROFILE</span><h2 className="mt-1 text-[25px] font-semibold tracking-tight">{employee.fullName}</h2><p className="text-[13px] text-white/85">{employee.position}</p></div>
+                <div><h2 className="text-[25px] font-semibold tracking-tight">{employee.fullName}</h2><p className="text-[13px] text-white/85">{employee.position}</p></div>
                 <span className="max-w-full break-all rounded-lg border border-white/30 bg-white/15 px-3 py-2 text-xs font-bold sm:ml-auto">{employee.userId}</span>
               </div>
               <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(260px,.75fr)_minmax(0,1.5fr)]">
                 <section className={panel + ' p-5 sm:grid sm:grid-cols-2 sm:gap-x-5 sm:p-6 xl:block'}>
-                  <div className="mb-5 flex flex-wrap items-end justify-between gap-3 sm:col-span-2"><div><span className={eyebrow}>ABOUT YOU</span><h2 className="text-[19px] font-semibold tracking-tight">Personal information</h2></div><button type="button" onClick={() => setEditingContact(value => !value)} className={'text-xs font-bold text-brand hover:underline ' + focusRing}>{editingContact ? 'Done editing' : 'Edit contact details'}</button></div>
+                  <div className="mb-5 flex flex-wrap items-end justify-between gap-3 sm:col-span-2"><div><span className={eyebrow}>ABOUT</span><h2 className="text-[19px] font-semibold tracking-tight">Personal information</h2></div><button type="button" onClick={() => setEditingContact(value => !value)} className={'text-xs font-bold text-brand hover:underline ' + focusRing}>{editingContact ? 'Done editing' : 'Edit contact details'}</button></div>
                   <ProfileDetail icon="user" label="Full name" value={employee.fullName} />
                   <ProfileDetail icon="briefcase" label="Position" value={employee.position} />
                   <ProfileDetail icon="grid" label="Unique user ID" value={employee.userId} />
@@ -449,7 +471,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
                   <ProfileDetail icon="calendar" label="Date registered" value={dateLabel(user.created_at)} />
                 </section>
                 <section className={panel + ' min-w-0 p-5 sm:p-6'}>
-                  <div className="mb-5"><span className={eyebrow}>YOUR RECORDS</span><h2 className="text-[19px] font-semibold tracking-tight">Attendance history</h2><p className="mt-1 text-xs text-muted">Scroll to see all your shifts, newest first.</p></div>
+                  <div className="mb-5"><span className={eyebrow}>RECORDS</span><h2 className="text-[19px] font-semibold tracking-tight">Attendance history</h2><p className="mt-1 text-xs text-muted">Scroll to see all your shifts, newest first.</p></div>
                   {history.loading && !history.shifts.length && <p role="status" className="py-9 text-center text-sm text-muted">Loading your records…</p>}
                   {history.error && <p role="alert" className="mb-3 text-sm text-rose-700 dark:text-rose-300">{history.error} <button type="button" onClick={history.retry} className="font-bold underline">Retry</button></p>}
                   {(!history.loading || history.shifts.length > 0) && <AttendanceTable shifts={history.shifts} now={now} scrollable onReachEnd={history.loadMore} hasMore={history.hasMore} loadingMore={history.loading} />}
