@@ -20,6 +20,6 @@ export default function PhoneNumberInput({ value, onChange }: {
     autoComplete="tel"
     placeholder="Enter phone number"
     countrySelectProps={{ 'aria-label': 'Phone country' }}
-    className="phone-field min-h-12 w-full rounded-xl border border-line bg-soft px-4 text-sm text-ink"
+    className="phone-field min-h-11 w-full rounded-lg border border-line bg-surface px-3 text-sm text-ink"
   />
 }

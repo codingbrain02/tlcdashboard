@@ -2,6 +2,12 @@
 
 Employee and administrator apps built with React, TypeScript, Vite, Tailwind CSS, and Supabase Auth/Postgres. The browser displays times in its own time zone. Clock-in and clock-out are recorded by Postgres, not by the device clock; an open shift continues while the site is closed or the employee is signed out.
 
+## Workspace design
+
+Both apps use matching Tailwind design tokens and `workspace-*`, `button-*`, and `form-field` components in their respective `src/global.css` files. Keep these foundations aligned across the independent repositories. The interface uses system fonts, neutral surfaces, a slate navigation rail, restrained indigo actions, and semantic status colors. No external fonts, image requests, or additional UI dependencies are needed.
+
+Navigation collapses below 1024px with an explicitly labeled, expanded-state menu control; desktop navigation and account settings stay reachable in a scrolling sidebar. Both workspaces include a keyboard skip link, visible focus states, and reduced-motion support. Employee pages prioritize the time clock, compact hour totals, contact details, and attendance records. Profile customization remains emoji-only and employee-only. The redesign does not change authentication, authorization, realtime subscriptions, password sessions, or attendance calculations.
+
 ## Supabase and first administrator setup
 
 1. The project uses versioned migrations in [`supabase/migrations/`](supabase/migrations/). Apply only pending migrations with the guarded CLI; **do not import the whole folder again in SQL Editor.**

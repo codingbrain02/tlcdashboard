@@ -58,11 +58,10 @@ function loadRememberedAccount(): RememberedAccount | null {
   }
 }
 
-const panel = 'min-w-0 rounded-2xl border border-line bg-surface shadow-sm'
-const eyebrow = 'mb-2 block text-[11px] font-extrabold tracking-[0.17em] text-brand'
+const panel = 'workspace-panel'
+const eyebrow = 'section-kicker mb-2 block'
 const focusRing = 'focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-indigo-300'
-const avatar = 'grid shrink-0 place-items-center rounded-full bg-[#e8e7ff] font-bold text-[#4f4fe2]'
-const muted = 'text-muted'
+const avatar = 'grid shrink-0 place-items-center rounded-full bg-indigo-50 dark:bg-indigo-400/10'
 
 function loadTheme(): Theme {
   try { return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light' }
@@ -119,6 +118,8 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
     case 'phone': return <svg {...props}><path d="M5 3h4l1 5-2 2a15 15 0 0 0 6 6l2-2 5 1v4a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2Z" /></svg>
     case 'briefcase': return <svg {...props}><rect x="3" y="7" width="18" height="14" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13a17 17 0 0 0 18 0" /></svg>
     case 'refresh': return <svg {...props}><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 7a7 7 0 0 1 11.6-2L20 8M4 16l2.3 3A7 7 0 0 0 17.9 17" /></svg>
+    case 'menu': return <svg {...props}><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+    case 'close': return <svg {...props}><path d="m6 6 12 12M18 6 6 18" /></svg>
     default: return null
   }
 }
@@ -141,18 +142,18 @@ function AttendanceTable({ shifts, now, scrollable = false, onReachEnd, hasMore 
     } : undefined} className={scrollable
       ? 'h-[350px] w-full max-w-full overflow-auto [contain:inline-size] sm:h-[380px]'
       : 'w-full max-w-full overflow-x-auto'}>
-      <table className="w-full min-w-[540px] border-collapse text-left text-[13px] whitespace-nowrap">
+      <table className="workspace-table min-w-[540px] whitespace-nowrap">
         <thead>
           <tr>
             {['Date', 'Clock in', 'End time', 'Duration', 'Status'].map((heading) => (
-              <th key={heading} scope="col" className="sticky top-0 z-10 bg-soft px-3 py-3 text-[11px] font-extrabold tracking-[0.09em] text-muted uppercase">{heading}</th>
+              <th key={heading} scope="col" className="sticky top-0 z-10">{heading}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {shifts.map((shift) => (
             <tr key={shift.id} className="border-b border-line last:border-0">
-              <td className="px-3 py-4 font-bold text-ink">{dateLabel(shift.clockIn, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</td>
+              <td className="px-3 py-4 font-medium text-ink">{dateLabel(shift.clockIn, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</td>
               <td className="px-3 py-4 text-muted">{timeLabel(shift.clockIn)}</td>
               <td className="px-3 py-4 text-muted">{shift.clockOut ? timeLabel(shift.clockOut) : '—'}</td>
               <td className="px-3 py-4 text-muted">{duration(shiftOverlap(shift, new Date(shift.clockIn).getTime(), now))}</td>
@@ -181,7 +182,7 @@ function ProfileDetail({ icon, label, value }: { icon: string; label: string; va
       <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-soft text-brand"><Icon name={icon} size={19} /></span>
       <div className="min-w-0">
         <span className="mb-1 block text-[11px] text-muted">{label}</span>
-        <strong className="block break-words text-sm text-ink">{value}</strong>
+        <strong className="block break-words text-sm font-medium text-ink">{value}</strong>
       </div>
     </div>
   )
@@ -202,8 +203,8 @@ function ContactEditor({ user, profile, onUserUpdated, onPhoneUpdated }: {
   const [emailError, setEmailError] = useState('')
   const [phoneNotice, setPhoneNotice] = useState('')
   const [phoneError, setPhoneError] = useState('')
-  const input = 'min-h-12 w-full rounded-xl border border-line bg-soft px-4 text-sm text-ink focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20'
-  const save = 'min-h-10 rounded-xl bg-[#4f4ff1] px-4 text-xs font-bold text-white hover:bg-[#4141d5] disabled:cursor-not-allowed disabled:opacity-50 ' + focusRing
+  const input = 'form-field'
+  const save = 'button-primary ' + focusRing
 
   async function saveEmail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -301,6 +302,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
     phone: profile.phone_number?.trim() || 'Not provided',
   }
   const [page, setPage] = useState<Page>('dashboard')
+  const [menuOpen, setMenuOpen] = useState(false)
   const [editingContact, setEditingContact] = useState(false)
   const [passwordOpen, setPasswordOpen] = useState(false)
   const [passwordSavedVersion, setPasswordSavedVersion] = useState(0)
@@ -321,6 +323,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local time'
 
   function openProfile() {
+    setMenuOpen(false)
     setPage('profile')
     window.scrollTo(0, 0)
   }
@@ -329,6 +332,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
     if (refreshBusy.current) return
     refreshBusy.current = true
     setRefreshing(true)
+    setMenuOpen(false)
     setPage('dashboard')
     window.scrollTo(0, 0)
     try { await attendance.refresh() }
@@ -344,40 +348,41 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
 
   const hour = new Date(now).getHours()
   const greeting = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening'
-  const navBase = 'flex min-w-0 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold text-white/85 transition-colors hover:bg-white/15 hover:text-white md:justify-start md:gap-3 md:px-4 md:py-3 md:text-sm ' + focusRing
+  const navBase = 'workspace-nav-item ' + focusRing
 
   return (
-    <div className="min-h-screen bg-page font-sans text-ink md:grid md:grid-cols-[230px_minmax(0,1fr)] xl:grid-cols-[254px_minmax(0,1fr)]">
-      <aside className="flex flex-wrap items-center gap-2 bg-[#4f4ff1] px-4 py-3 text-white dark:bg-[#27276f] md:sticky md:top-0 md:h-screen md:min-h-screen md:flex-col md:items-stretch md:gap-0 md:overflow-y-auto md:px-4 md:py-7" aria-label="Main navigation">
-        <button type="button" onClick={() => void refreshDashboard()} disabled={refreshing} aria-label="Refresh dashboard" aria-busy={refreshing} title="Refresh dashboard" className={'flex w-full items-center gap-2.5 rounded-xl text-left transition-colors hover:bg-white/10 disabled:cursor-progress md:mb-12 md:w-auto md:px-2 ' + focusRing}>
-          <span className="grid size-11 shrink-0 place-items-center rounded-[13px] border border-white/20 bg-white/20 text-[17px] font-extrabold tracking-[-1px]">{refreshing ? <span className="motion-safe:animate-spin"><Icon name="refresh" size={21} /></span> : 'TLC'}</span>
-          <span className="min-w-0 text-[13px] font-bold leading-tight md:text-[15px]">Tech Live Connect<small className="mt-1 block text-[10px] font-normal text-white/75 md:text-[11px]">Employee workspace</small></span>
+    <div className="workspace-shell">
+      <a href="#main-content" className="skip-link">Skip to content</a>
+      <aside className="workspace-sidebar" aria-label="Main navigation">
+        <div className="flex items-center justify-between gap-3">
+        <button type="button" onClick={() => void refreshDashboard()} disabled={refreshing} aria-label="Refresh dashboard" aria-busy={refreshing} title="Refresh dashboard" className={'workspace-brand ' + focusRing}>
+          <span className="workspace-mark">{refreshing ? <span className="motion-safe:animate-spin"><Icon name="refresh" size={20} /></span> : 'TLC'}</span>
+          <span className="min-w-0 text-[13px] font-semibold leading-tight">Tech Live Connect<small className="mt-1 block text-[11px] font-normal text-slate-400">Employee workspace</small></span>
         </button>
+        <button type="button" onClick={() => setMenuOpen(value => !value)} aria-label={menuOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={menuOpen} aria-controls="employee-navigation" className="grid size-10 shrink-0 place-items-center rounded-lg border border-white/15 text-white hover:bg-white/10 lg:hidden"><Icon name={menuOpen ? 'close' : 'menu'} size={20} /></button>
+        </div>
         <span role="status" className="sr-only">{refreshing ? 'Refreshing dashboard…' : ''}</span>
-        <span className="mb-3 hidden px-4 text-[10px] font-bold tracking-[0.18em] text-white/70 md:block">WORKSPACE</span>
-        <nav className="grid w-full min-w-0 grid-cols-2 gap-1 md:flex md:flex-col md:gap-2" aria-label="Pages">
-          <button type="button" className={navBase + (page === 'dashboard' ? ' bg-white/20 text-white ring-1 ring-white/10' : '')} onClick={() => setPage('dashboard')} aria-current={page === 'dashboard' ? 'page' : undefined}><Icon name="grid" size={18} />Dashboard</button>
-          <button type="button" className={navBase + (page === 'profile' ? ' bg-white/20 text-white ring-1 ring-white/10' : '')} onClick={() => setPage('profile')} aria-current={page === 'profile' ? 'page' : undefined}><Icon name="user" size={18} />My profile</button>
+        <div id="employee-navigation" className={(menuOpen ? 'flex' : 'hidden') + ' min-w-0 flex-col gap-5 lg:contents'}>
+        <nav className="workspace-nav sm:grid-cols-2" aria-label="Pages">
+          <span className="mb-2 hidden px-3 text-[10px] font-semibold tracking-widest text-slate-400 uppercase lg:block">Workspace</span>
+          <button type="button" className={navBase} onClick={() => { setMenuOpen(false); setPage('dashboard'); window.scrollTo(0, 0) }} aria-current={page === 'dashboard' ? 'page' : undefined}><Icon name="grid" size={18} />Dashboard</button>
+          <button type="button" className={navBase} onClick={openProfile} aria-current={page === 'profile' ? 'page' : undefined}><Icon name="user" size={18} />My profile</button>
         </nav>
-        <div className="w-full min-w-0 md:mt-auto">
-          <div className="mb-6 hidden rounded-2xl border border-white/15 bg-white/10 px-4 py-4 md:block">
-            <span className="mb-3 grid size-8 place-items-center rounded-lg bg-white/15"><Icon name="clock" size={17} /></span>
-            <strong className="block text-sm">Time that stays with you.</strong>
-            <p className="mt-2 text-xs leading-relaxed text-white/80">Your active shift stays on the server when you close this page or sign out.</p>
-          </div>
-          <div className="grid grid-cols-2 items-center gap-x-2 gap-y-1 border-t border-white/20 px-1 pt-3 md:block md:pt-4">
-            <div className="col-span-2 flex min-w-0 items-center gap-2.5 px-2 py-1.5"><button type="button" onClick={() => setAvatarOpen(true)} aria-label="Change profile emoji from sidebar" aria-haspopup="dialog" title="Change profile emoji" className={'shrink-0 rounded-full transition-shadow hover:ring-2 hover:ring-white/40 ' + focusRing}><EmojiAvatar value={profile.avatar_emoji} className={avatar + ' size-9 text-xl'} /></button><button type="button" onClick={openProfile} aria-label="Open my profile" className={'min-h-11 min-w-0 flex-1 rounded-lg text-left transition-colors hover:bg-white/15 ' + focusRing}><strong className="block truncate text-[13px]">{employee.fullName}</strong><small className="mt-0.5 block truncate text-[11px] text-white/75">{employee.position}</small></button></div>
-            <button type="button" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={'Switch to ' + (theme === 'light' ? 'dark' : 'light') + ' mode'} className={'flex min-h-11 min-w-0 items-center gap-2 rounded-lg px-2 text-left text-xs font-semibold text-white/85 transition hover:bg-white/15 hover:text-white md:mt-2 md:w-full ' + focusRing}><Icon name={theme === 'light' ? 'sun' : 'moon'} size={16} /><span>Appearance</span><span className="ml-auto rounded-md border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] text-white/80">{theme === 'light' ? 'Light' : 'Dark'}</span></button>
-            <button type="button" onClick={() => setPasswordOpen(true)} aria-haspopup="dialog" className={'flex min-h-11 items-center gap-2 rounded-lg px-2 text-left text-xs font-semibold text-white/85 transition hover:bg-white/15 hover:text-white md:mt-2 md:w-full ' + focusRing}>
+        <div className="workspace-account">
+          <div className="contents">
+            <div className="col-span-2 flex min-w-0 items-center gap-2.5 px-2 py-1.5"><button type="button" onClick={() => setAvatarOpen(true)} aria-label="Change profile emoji from sidebar" aria-haspopup="dialog" title="Change profile emoji" className={'shrink-0 rounded-full transition-shadow hover:ring-2 hover:ring-white/40 ' + focusRing}><EmojiAvatar value={profile.avatar_emoji} className={avatar + ' size-9 text-xl'} /></button><button type="button" onClick={openProfile} aria-label="Open my profile" className={'min-h-11 min-w-0 flex-1 rounded-lg text-left transition-colors hover:bg-white/15 ' + focusRing}><strong className="block truncate text-[13px] font-semibold text-white">{employee.fullName}</strong><small className="mt-0.5 block truncate text-[11px] text-white/75">{employee.position}</small></button></div>
+            <button type="button" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={'Switch to ' + (theme === 'light' ? 'dark' : 'light') + ' mode'} className={'workspace-account-action ' + focusRing}><Icon name={theme === 'light' ? 'sun' : 'moon'} size={16} /><span>Appearance</span><span className="ml-auto text-[10px] text-slate-400">{theme === 'light' ? 'Light' : 'Dark'}</span></button>
+            <button type="button" onClick={() => setPasswordOpen(true)} aria-haspopup="dialog" className={'workspace-account-action ' + focusRing}>
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-4 shrink-0"><circle cx="8" cy="15" r="4" /><path d="m11 12 9-9m-3 3 3 3m-6 0 3 3" /></svg>
               Change my password
             </button>
           </div>
         </div>
+        </div>
       </aside>
 
       <div className="min-w-0">
-        <header className="flex h-16 items-center justify-between gap-3 border-b border-line bg-surface px-4 md:h-[78px] md:px-8 xl:px-12">
+        <header className="workspace-topbar">
           <span className="min-w-0 truncate text-xs text-muted md:text-[13px]">Workspace <span className="mx-2 text-muted/60">/</span> <strong className="font-semibold text-ink">{page === 'dashboard' ? 'Dashboard' : 'My profile'}</strong></span>
           <div className="flex shrink-0 items-center gap-2 sm:gap-4">
             <span className={'inline-flex items-center gap-2 whitespace-nowrap rounded-full px-2.5 py-1.5 text-[11px] font-semibold sm:px-3 sm:text-xs ' + (attendance.error ? 'bg-amber-50 text-amber-800 dark:bg-amber-400/10 dark:text-amber-200' : active ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-200' : 'bg-soft text-muted')} title={attendance.error ? 'Attendance could not be refreshed. Retry below.' : active ? 'Your shift is in progress' : 'You have no active shift'}><span className="size-1.5 rounded-full bg-current" />{attendance.error ? 'Sync unavailable' : active ? 'On duty' : 'Off duty'}</span>
@@ -386,61 +391,61 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
           </div>
         </header>
 
-        <main className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 md:px-8 md:py-9 xl:px-12">
+        <main id="main-content" tabIndex={-1} className="workspace-content outline-none">
           {logoutError && <p role="alert" className="mb-4 rounded-lg border border-rose-400 bg-rose-50 p-3 text-sm text-rose-800 dark:bg-rose-950 dark:text-rose-200">{logoutError}</p>}
           {attendance.error && <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-400 bg-rose-50 p-3 text-sm text-rose-800 dark:bg-rose-950 dark:text-rose-200"><span>{attendance.error}</span><button type="button" onClick={() => void attendance.refresh()} className={'font-bold underline ' + focusRing}>Retry</button></div>}
           {page === 'dashboard' ? (
             <>
               <div className="mb-7 flex flex-col items-start gap-3 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                  <h1 className="text-[27px] leading-tight font-bold tracking-[-0.04em] sm:text-[31px]">Good {greeting}, {employee.fullName.split(' ')[0]} <span className="text-[#eeb256]" aria-hidden="true">✳</span></h1>
-                  <p className={'mt-2 text-[15px] ' + muted}>Here’s your workday at a glance.</p>
+                  <h1 className="page-title">Good {greeting}, {employee.fullName.split(' ')[0]}</h1>
+                  <p className="mt-2 text-sm text-muted">Manage your shift and review your attendance.</p>
                 </div>
-                <div className="inline-flex items-center gap-2 whitespace-nowrap rounded-xl border border-line bg-surface px-3 py-2.5 text-xs font-semibold text-muted shadow-sm"><Icon name="calendar" size={18} />{dateLabel(new Date(now), { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</div>
+                <div className="inline-flex items-center gap-2 text-xs text-muted"><Icon name="calendar" size={16} />{dateLabel(new Date(now), { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</div>
               </div>
 
               <section className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4" aria-label="Attendance summary">
-                <div className={panel + ' min-h-[142px] p-4 sm:min-h-[165px] sm:p-5'}>
-                  <span className="mb-3 grid size-9 place-items-center rounded-lg bg-[#ecebff] text-[#5451e6]"><Icon name="clock" /></span>
+                <div className={panel + ' relative p-4 sm:p-5'}>
+                  <span className="absolute top-4 right-4 hidden text-muted/70 sm:block"><Icon name="clock" size={18} /></span>
                   <span className="block text-xs font-semibold text-muted sm:text-[13px]">Hours worked today</span>
-                  <strong className="mt-1 block text-[22px] leading-tight tracking-tight sm:text-[26px]">{duration(todayTotal)}</strong>
+                  <strong className="mt-3 block text-[26px] leading-tight font-semibold tracking-tight tabular-nums">{duration(todayTotal)}</strong>
                   <small className="mt-1 block break-words text-[10px] text-muted sm:text-xs">Since midnight · {timeZone}</small>
                 </div>
-                <div className={panel + ' min-h-[142px] p-4 sm:min-h-[165px] sm:p-5'}>
-                  <span className="mb-3 grid size-9 place-items-center rounded-lg bg-[#e9f1ff] text-[#4177ce]"><Icon name="calendar" /></span>
+                <div className={panel + ' relative p-4 sm:p-5'}>
+                  <span className="absolute top-4 right-4 hidden text-muted/70 sm:block"><Icon name="calendar" size={18} /></span>
                   <span className="block text-xs font-semibold text-muted sm:text-[13px]">Hours this week</span>
-                  <strong className="mt-1 block text-[22px] leading-tight tracking-tight sm:text-[26px]">{duration(weekTotal)}</strong>
+                  <strong className="mt-3 block text-[26px] leading-tight font-semibold tracking-tight tabular-nums">{duration(weekTotal)}</strong>
                   <small className="mt-1 block text-[10px] text-muted sm:text-xs">Monday through Sunday</small>
                 </div>
-                <div className={panel + ' col-span-2 min-h-[115px] p-4 lg:col-span-1 lg:min-h-[165px] lg:p-5'}>
-                  <span className="mb-2 grid size-9 place-items-center rounded-lg bg-[#e4f7ef] text-[#158558] lg:mb-3"><Icon name="check" /></span>
+                <div className={panel + ' relative hidden p-5 lg:block'}>
+                  <span className="absolute top-4 right-4 text-muted/70"><Icon name="check" size={18} /></span>
                   <span className="block text-xs font-semibold text-muted sm:text-[13px]">Current status</span>
-                  <strong className="mt-1 flex items-center gap-2 text-[22px] leading-tight tracking-tight sm:text-[26px]"><span className={'size-2.5 rounded-full ' + (active ? 'bg-emerald-500 ring-4 ring-emerald-500/15' : 'bg-slate-400')} />{active ? 'On duty' : 'Off duty'}</strong>
+                  <strong className="mt-3 flex items-center gap-2.5 text-[26px] leading-tight font-semibold tracking-tight"><span className={'size-2 rounded-full ' + (active ? 'bg-emerald-500' : 'bg-slate-400')} />{active ? 'On duty' : 'Off duty'}</strong>
                   <small className="mt-1 block text-[10px] text-muted sm:text-xs">{active ? 'Shift in progress' : 'Ready for your next shift'}</small>
                 </div>
               </section>
 
               <section className="mb-5 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(285px,1fr)]">
-                <div className="flex min-h-[330px] min-w-0 flex-col overflow-hidden rounded-[18px] bg-[linear-gradient(135deg,#5351f1,#3539c5)] text-white shadow-lg shadow-indigo-500/10">
-                  <div className="flex items-center justify-between gap-2 px-5 pt-5 sm:px-7">
-                    <span className="flex items-center gap-2 text-[11px] font-extrabold tracking-[0.13em] text-white/90"><Icon name="clock" size={18} />TIME TRACKER</span>
-                    <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-white/20 bg-white/15 px-2.5 py-1.5 text-[11px] font-semibold"><span className={'size-1.5 rounded-full ' + (active ? 'bg-emerald-200' : 'bg-indigo-200')} />{active ? 'Currently working' : 'Not clocked in'}</span>
+                <div className={panel + ' flex min-h-[340px] flex-col'}>
+                  <div className="flex items-center justify-between gap-2 border-b border-line px-5 py-4 sm:px-6">
+                    <h2 className="section-title flex items-center gap-2.5"><span className="text-brand"><Icon name="clock" size={18} /></span>Time clock</h2>
+                    <span className="text-xs text-muted">{active ? 'Shift in progress' : 'No active shift'}</span>
                   </div>
-                  <div className="flex flex-1 flex-col items-center justify-center px-3 py-5 text-center">
-                    <span className="text-sm text-white/85">{active ? 'Your active shift' : 'Ready when you are'}</span>
-                    <div className="my-2 text-[clamp(38px,5vw,59px)] leading-tight font-bold tracking-[0.02em] tabular-nums">{active ? duration(now - new Date(active.clockIn).getTime(), true) : timeLabel(new Date(now))}</div>
-                    <p className="mb-5 text-[13px] text-white/85">{active ? 'Started at ' + timeLabel(active.clockIn) + ' · ' + dateLabel(active.clockIn) : 'Start your shift when you’re ready to work.'}</p>
-                    <button type="button" disabled={attendance.busy || attendance.now === null || Boolean(attendance.error)} className={'inline-flex min-h-11 min-w-36 items-center justify-center gap-3 rounded-xl bg-white px-5 text-sm font-extrabold shadow-lg shadow-indigo-950/10 transition-transform hover:-translate-y-0.5 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60 ' + (active ? 'text-rose-700 ' : 'text-indigo-700 ') + focusRing} onClick={() => void attendance.toggleShift()}>{attendance.busy ? 'Saving…' : active ? 'Clock out' : 'Clock in'}<Icon name="arrow" size={18} /></button>
+                  <div className="flex flex-1 flex-col items-center justify-center px-4 py-8 text-center">
+                    <span className="section-kicker">{active ? 'Elapsed time' : 'Local time'}</span>
+                    <div className="my-3 text-[clamp(36px,5vw,60px)] leading-none font-semibold tracking-[-0.04em] tabular-nums">{active ? duration(now - new Date(active.clockIn).getTime(), true) : timeLabel(new Date(now))}</div>
+                    <p className="mt-1 mb-6 text-xs leading-5 text-muted">{active ? 'Started at ' + timeLabel(active.clockIn) + ' · ' + dateLabel(active.clockIn) : 'Clock in to begin tracking your shift.'}</p>
+                    <button type="button" disabled={attendance.busy || attendance.now === null || Boolean(attendance.error)} className={(active ? 'button-secondary border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-400/10 ' : 'button-primary ') + ' min-h-12 min-w-40 ' + focusRing} onClick={() => void attendance.toggleShift()}>{attendance.busy ? 'Saving…' : active ? 'Clock out' : 'Clock in'}<Icon name="arrow" size={17} /></button>
                   </div>
-                  <div className="flex items-center justify-center gap-2 border-t border-white/20 px-3 py-3 text-center text-[11px] text-white/80"><Icon name="check" size={15} />{active ? 'Elapsed time continues while you’re away.' : 'Clock events use server time.'}</div>
+                  <div className="flex items-center justify-center gap-2 border-t border-line bg-soft px-4 py-3 text-center text-[11px] text-muted"><Icon name="check" size={14} />{active ? 'Your shift continues if you close this page.' : 'Clock-in and clock-out are recorded using server time.'}</div>
                 </div>
 
                 <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-1">
                   <div className={panel + ' p-5'}>
-                    <div className="flex items-center justify-between gap-3"><h2 className="text-[19px] font-semibold tracking-tight">Your profile</h2><button type="button" className={'inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-bold text-brand hover:underline ' + focusRing} onClick={() => setPage('profile')}>View profile<Icon name="arrow" size={15} /></button></div>
-                    <div className="mt-6 flex items-center gap-3">
+                    <div className="flex items-center justify-between gap-3"><h2 className="section-title">Profile</h2><button type="button" className={'inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-brand hover:underline ' + focusRing} onClick={openProfile}>View profile<Icon name="arrow" size={15} /></button></div>
+                    <div className="mt-4 flex min-w-0 items-center gap-3">
                       <button type="button" onClick={() => setAvatarOpen(true)} aria-label="Change profile emoji from dashboard" aria-haspopup="dialog" title="Change profile emoji" className={'shrink-0 rounded-full transition-shadow hover:ring-2 hover:ring-brand/30 ' + focusRing}><EmojiAvatar value={profile.avatar_emoji} className={avatar + ' size-14 text-3xl'} /></button>
-                      <div><strong className="block text-[15px]">{employee.fullName}</strong><span className="mt-0.5 block text-xs text-muted">{employee.position}</span><small className="mt-1 block text-[11px] font-bold text-brand">{employee.userId}</small></div>
+                      <div className="min-w-0"><strong className="block break-words text-sm font-semibold">{employee.fullName}</strong><span className="mt-1 block text-xs text-muted">{employee.position}</span></div>
                     </div>
                     <div className="my-4 border-t border-line" />
                     <div className="flex items-center gap-2.5 break-all text-xs text-muted"><span className="text-brand"><Icon name="mail" size={17} /></span>{employee.email}</div>
@@ -458,23 +463,23 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
 
               <section className={panel + ' px-4 pt-5 pb-3 sm:px-6'}>
                 <div className="mb-4 flex items-end justify-between gap-3">
-                  <div><span className={eyebrow}>YOUR ATTENDANCE</span><h2 className="text-[19px] font-semibold tracking-tight">Recent activity</h2></div>
-                  <button type="button" className={'inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-bold text-brand hover:underline ' + focusRing} onClick={() => setPage('profile')}>View all records<Icon name="arrow" size={15} /></button>
+                  <div><h2 className="section-title">Recent attendance</h2><p className="mt-1 text-xs text-muted">Your most recent shifts</p></div>
+                  <button type="button" className={'inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-bold text-brand hover:underline ' + focusRing} onClick={openProfile}>View all records<Icon name="arrow" size={15} /></button>
                 </div>
                 <AttendanceTable shifts={attendance.recentShifts} now={now} />
               </section>
             </>
           ) : (
             <>
-              <div className="mb-7"><h1 className="text-[27px] leading-tight font-bold tracking-[-0.04em] sm:text-[31px]">My profile</h1><p className="mt-2 text-[15px] text-muted">Your details and complete attendance history, all in one place.</p></div>
-              <div className="mb-5 flex min-h-36 flex-wrap items-center gap-4 rounded-2xl bg-[linear-gradient(110deg,#5552ee,#3f42d6)] p-5 text-white sm:p-7">
-                <button type="button" onClick={() => setAvatarOpen(true)} aria-label="Change profile emoji" aria-haspopup="dialog" title="Change profile emoji" className={'group relative shrink-0 rounded-full transition-shadow hover:ring-2 hover:ring-white/40 ' + focusRing}><EmojiAvatar value={profile.avatar_emoji} className="size-16 border-2 border-white/30 bg-white/20 text-4xl sm:size-[75px]" /><span aria-hidden="true" className="absolute -bottom-0.5 -right-0.5 grid size-6 place-items-center rounded-full border border-white/30 bg-white text-[#4f46e5] shadow-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-3"><path d="m15 4 5 5M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15l-1 5Z" /></svg></span></button>
-                <div><h2 className="text-[25px] font-semibold tracking-tight">{employee.fullName}</h2><p className="text-[13px] text-white/85">{employee.position}</p></div>
-                <span className="max-w-full break-all rounded-lg border border-white/30 bg-white/15 px-3 py-2 text-xs font-bold sm:ml-auto">{employee.userId}</span>
+              <div className="mb-7"><h1 className="page-title">My profile</h1><p className="mt-2 text-sm text-muted">Manage your contact details and review your work records.</p></div>
+              <div className={panel + ' mb-5 flex flex-wrap items-center gap-4 p-5 sm:p-6'}>
+                <button type="button" onClick={() => setAvatarOpen(true)} aria-label="Change profile emoji" aria-haspopup="dialog" title="Change profile emoji" className={'group relative shrink-0 rounded-full transition-shadow hover:ring-2 hover:ring-brand/30 ' + focusRing}><EmojiAvatar value={profile.avatar_emoji} className={avatar + ' size-16 text-4xl'} /><span aria-hidden="true" className="absolute -bottom-0.5 -right-0.5 grid size-6 place-items-center rounded-full border border-line bg-surface text-brand shadow-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="size-3"><path d="m15 4 5 5M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15l-1 5Z" /></svg></span></button>
+                <div className="min-w-0"><h2 className="break-words text-xl font-semibold tracking-tight">{employee.fullName}</h2><p className="mt-1 text-sm text-muted">{employee.position}</p><button type="button" onClick={() => setAvatarOpen(true)} aria-haspopup="dialog" className="mt-2 text-xs font-medium text-brand hover:underline">Change emoji</button></div>
+                <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 sm:ml-auto dark:bg-emerald-400/10 dark:text-emerald-300"><span className="size-1.5 rounded-full bg-current" />Active account</span>
               </div>
               <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(260px,.75fr)_minmax(0,1.5fr)]">
                 <section className={panel + ' p-5 sm:grid sm:grid-cols-2 sm:gap-x-5 sm:p-6 xl:block'}>
-                  <div className="mb-5 flex flex-wrap items-end justify-between gap-3 sm:col-span-2"><div><span className={eyebrow}>ABOUT</span><h2 className="text-[19px] font-semibold tracking-tight">Personal information</h2></div><button type="button" onClick={() => setEditingContact(value => !value)} className={'text-xs font-bold text-brand hover:underline ' + focusRing}>{editingContact ? 'Done editing' : 'Edit contact details'}</button></div>
+                  <div className="mb-5 flex flex-wrap items-end justify-between gap-3 sm:col-span-2"><div><h2 className="section-title">About</h2><p className="mt-1 text-xs text-muted">Contact and work information</p></div><button type="button" onClick={() => setEditingContact(value => !value)} className={'text-xs font-semibold text-brand hover:underline ' + focusRing}>{editingContact ? 'Done editing' : 'Edit contact details'}</button></div>
                   <ProfileDetail icon="user" label="Full name" value={employee.fullName} />
                   <ProfileDetail icon="briefcase" label="Position" value={employee.position} />
                   <ProfileDetail icon="grid" label="Unique user ID" value={employee.userId} />
@@ -482,7 +487,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
                   <ProfileDetail icon="calendar" label="Date registered" value={dateLabel(user.created_at)} />
                 </section>
                 <section className={panel + ' min-w-0 p-5 sm:p-6'}>
-                  <div className="mb-5"><span className={eyebrow}>RECORDS</span><h2 className="text-[19px] font-semibold tracking-tight">Attendance history</h2><p className="mt-1 text-xs text-muted">Scroll to see all your shifts, newest first.</p></div>
+                  <div className="mb-5"><h2 className="section-title">Records</h2><p className="mt-1 text-xs text-muted">Attendance history, newest shifts first.</p></div>
                   {history.loading && !history.shifts.length && <p role="status" className="py-9 text-center text-sm text-muted">Loading your records…</p>}
                   {history.error && <p role="alert" className="mb-3 text-sm text-rose-700 dark:text-rose-300">{history.error} <button type="button" onClick={history.retry} className="font-bold underline">Retry</button></p>}
                   {(!history.loading || history.shifts.length > 0) && <AttendanceTable shifts={history.shifts} now={now} scrollable onReachEnd={history.loadMore} hasMore={history.hasMore} loadingMore={history.loading} />}
@@ -491,7 +496,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
               </div>
             </>
           )}
-          <footer className="mt-7 text-center text-[11px] text-muted">TLC Tech Live Connect <span className="mx-1">·</span> Employee attendance</footer>
+          <footer className="mt-7 flex flex-wrap justify-between gap-2 border-t border-line pt-4 text-[11px] text-muted"><span>Tech Live Connect · Employee workspace</span><span>Times displayed in {timeZone}</span></footer>
         </main>
         {passwordSavedVersion > 0 && <PasswordSuccessToast key={passwordSavedVersion} />}
         {passwordOpen && <PasswordSettings onChanged={() => setPasswordSavedVersion(version => version + 1)} onClose={() => setPasswordOpen(false)} />}
@@ -551,18 +556,18 @@ function LoginScreen({ theme, setTheme, rememberedAccount, onForgetAccount, onSi
 
   return (
     <div className="min-h-screen bg-page font-sans text-ink">
-      <header className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5 sm:px-8 sm:py-7">
+      <header className="mx-auto flex max-w-5xl items-center justify-between px-5 py-6 sm:px-8">
         <div className="flex items-center gap-3">
-          <span className="grid size-10 place-items-center rounded-xl bg-[#4f4ff1] text-sm font-extrabold text-white shadow-sm">TLC</span>
+          <span className="workspace-mark">TLC</span>
           <span className="text-sm font-bold tracking-tight sm:text-base">Tech Live Connect</span>
         </div>
         <button type="button" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={'Switch to ' + (theme === 'light' ? 'dark' : 'light') + ' mode'} className={'grid size-10 place-items-center rounded-xl border border-line bg-surface text-muted hover:text-brand ' + focusRing}><Icon name={theme === 'light' ? 'moon' : 'sun'} size={19} /></button>
       </header>
-      <main className="mx-auto grid w-full max-w-6xl items-center gap-10 px-5 pb-12 pt-8 sm:px-8 sm:pt-14 lg:min-h-[calc(100vh-100px)] lg:grid-cols-[minmax(0,1fr)_minmax(360px,440px)] lg:gap-16 lg:pt-0">
-        <div className="max-w-xl">
-          <span className="mb-5 inline-flex rounded-full border border-[#dcdcff] bg-[#eeeeff] px-3 py-1.5 text-[11px] font-extrabold tracking-[0.13em] text-[#4f4fe2] dark:border-[#55548e] dark:bg-[#303052] dark:text-[#c6c4ff]">EMPLOYEE WORKSPACE</span>
-          <h1 className="text-[clamp(2.35rem,5vw,4.2rem)] leading-[1.08] font-bold tracking-[-0.055em]">Your workday,<br /><span className="text-brand">all in one place.</span></h1>
-          <p className="mt-5 max-w-md text-[15px] leading-7 text-muted sm:text-base">Sign in to view your dashboard, profile, and attendance records.</p>
+      <main className="auth-layout">
+        <div className={rememberedAccount ? 'w-full max-w-[420px] lg:max-w-xl' : 'hidden max-w-xl lg:block'}>
+          <span className="section-kicker hidden lg:block">Employee workspace</span>
+          <h2 className="mt-4 hidden text-[clamp(2rem,4vw,3rem)] leading-[1.15] font-semibold tracking-[-0.045em] lg:block">Your workday<br />starts here.</h2>
+          <p className="mt-5 hidden max-w-sm text-sm leading-7 text-muted lg:block">Clock in, keep track of your hours, and access your employee information.</p>
           {rememberedAccount ? (
             <section aria-label="Remembered account" className="mt-9 max-w-md">
               <div className="mb-3 flex items-center justify-between gap-3"><span className="text-[11px] font-extrabold tracking-[0.14em] text-muted uppercase">Your account</span><button type="button" onClick={onForgetAccount} className={'text-xs font-semibold text-muted underline-offset-2 hover:text-brand hover:underline ' + focusRing}>Remove from this device</button></div>
@@ -574,23 +579,22 @@ function LoginScreen({ theme, setTheme, rememberedAccount, onForgetAccount, onSi
               <p className="mt-3 text-xs leading-5 text-muted">Your password is still required after signing out. We never save it here.</p>
             </section>
           ) : (
-            <div className="mt-9 hidden max-w-md grid-cols-2 gap-3 sm:grid">
-              <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm"><span className="mb-3 grid size-9 place-items-center rounded-lg bg-soft text-brand"><Icon name="clock" size={20} /></span><strong className="block text-sm">Track your shift</strong><span className="mt-1 block text-xs leading-5 text-muted">See your current status and elapsed time.</span></div>
-              <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm"><span className="mb-3 grid size-9 place-items-center rounded-lg bg-soft text-brand"><Icon name="user" size={20} /></span><strong className="block text-sm">Your own space</strong><span className="mt-1 block text-xs leading-5 text-muted">View your profile and attendance history.</span></div>
+            <div className="mt-8 hidden max-w-sm space-y-4 border-t border-line pt-6 sm:block">
+              <div className="flex gap-3"><span className="mt-0.5 text-brand"><Icon name="clock" size={18} /></span><div><strong className="block text-sm font-medium">Reliable time tracking</strong><span className="mt-1 block text-xs leading-5 text-muted">Your active shift continues when you close the page.</span></div></div>
+              <div className="flex gap-3"><span className="mt-0.5 text-brand"><Icon name="user" size={18} /></span><div><strong className="block text-sm font-medium">Your information, up to date</strong><span className="mt-1 block text-xs leading-5 text-muted">Manage your profile and review your attendance.</span></div></div>
             </div>
           )}
         </div>
-        <section aria-labelledby="login-title" className="w-full rounded-[24px] border border-line bg-surface p-6 shadow-[0_18px_55px_-30px_rgba(35,40,90,.35)] sm:p-8">
-          <span className="mb-5 grid size-11 place-items-center rounded-xl bg-[#eeedff] text-[#5552e6] dark:bg-[#34345e] dark:text-[#c6c4ff]"><Icon name="user" size={21} /></span>
-          <h2 id="login-title" className="text-[27px] font-bold tracking-tight">Welcome back</h2>
+        <section aria-labelledby="login-title" className="workspace-panel w-full max-w-[420px] p-6 sm:p-8 lg:max-w-none">
+          <h1 id="login-title" className="text-2xl font-semibold tracking-tight">Sign in</h1>
           <p className="mt-2 text-sm leading-6 text-muted">Enter your employee credentials to continue.</p>
           {notice && <p role="status" className="mt-5 rounded-xl border border-line bg-soft p-3 text-sm">{notice}</p>}
           {!supabase && <p role="alert" className="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm leading-5 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">Sign-in is not configured yet. Add your Supabase project URL and publishable key to <code>.env.local</code>, then restart the app.</p>}
           {error && <p role="alert" className="mt-6 rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm leading-5 text-rose-800 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-100">{error}</p>}
           <form onSubmit={signIn} className="mt-7 space-y-5">
-            <div><label htmlFor="email" className="mb-2 block text-sm font-semibold">Email address</label><input id="email" type="email" required autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@company.com" className={'min-h-12 w-full rounded-xl border border-line bg-soft px-4 text-sm text-ink placeholder:text-muted/70 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 ' + focusRing} /></div>
-            <div><label htmlFor="password" className="mb-2 block text-sm font-semibold">Password</label><div className="relative"><input ref={passwordRef} id="password" type={showPassword ? 'text' : 'password'} required autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter your password" className={'min-h-12 w-full rounded-xl border border-line bg-soft py-3 pr-19 pl-4 text-sm text-ink placeholder:text-muted/70 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20 ' + focusRing} /><button type="button" onClick={() => setShowPassword(!showPassword)} className={'absolute inset-y-0 right-2 px-2 text-xs font-bold text-brand hover:underline ' + focusRing} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? 'Hide' : 'Show'}</button></div></div>
-            <button type="submit" disabled={!supabase || busy} className={'flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#4f4ff1] px-5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#4141d5] disabled:cursor-not-allowed disabled:opacity-55 ' + focusRing}>{busy ? 'Signing in…' : 'Sign in'}{!busy && <Icon name="arrow" size={17} />}</button>
+            <div><label htmlFor="email" className="mb-2 block text-sm font-semibold">Email address</label><input id="email" type="email" required autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@company.com" className="form-field" /></div>
+            <div><label htmlFor="password" className="mb-2 block text-sm font-semibold">Password</label><div className="relative"><input ref={passwordRef} id="password" type={showPassword ? 'text' : 'password'} required autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter your password" className={'form-field py-3 pr-19 pl-3 ' + focusRing} /><button type="button" onClick={() => setShowPassword(!showPassword)} className={'absolute inset-y-0 right-2 px-2 text-xs font-bold text-brand hover:underline ' + focusRing} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? 'Hide' : 'Show'}</button></div></div>
+            <button type="submit" disabled={!supabase || busy} className={'button-primary w-full ' + focusRing}>{busy ? 'Signing in…' : 'Sign in'}{!busy && <Icon name="arrow" size={17} />}</button>
           </form>
           <p className="mt-6 text-center text-xs leading-5 text-muted">Need an account or a password reset? Contact your administrator.</p>
         </section>
