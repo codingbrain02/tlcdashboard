@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { synchronizeEmployeeAccess } from './employee-access.ts'
+import { parseEmployeeSearch } from './employee-search.ts'
 
 function defaultKey(json: string | undefined) {
   try {
@@ -307,18 +308,19 @@ Deno.serve(async (request) => {
     if (body.action === 'list-employees') {
       if (operator.role !== 'super_admin' && operator.role !== 'admin') return reply(403, 'Administrator access required.')
       const page = Number.isInteger(body.page) && body.page >= 0 && body.page <= 1000 ? body.page : 0
-      const nameWords = searchWords(body.name, 80)
+      const employeeSearch = parseEmployeeSearch(body.name)
       const positionWords = searchWords(body.position, 120)
       const status = body.status ?? 'all'
       const sort = body.sort ?? 'newest'
-      if (!nameWords || !positionWords || !['all', 'active', 'inactive', 'terminated'].includes(status)
+      if (!employeeSearch || !positionWords || !['all', 'active', 'inactive', 'terminated'].includes(status)
         || !['newest', 'name-asc', 'name-desc', 'position-asc', 'position-desc'].includes(sort)) {
         return reply(400, 'Invalid employee filters.')
       }
       const size = 20
       let query = admin.from('admin_employee_directory')
         .select(employeeColumns)
-      for (const word of nameWords) query = query.ilike('full_name', likeContains(word))
+      if (employeeSearch.employeeId) query = query.eq('id', employeeSearch.employeeId)
+      for (const word of employeeSearch.nameWords) query = query.ilike('full_name', likeContains(word))
       for (const word of positionWords) query = query.ilike('position', likeContains(word))
       if (status === 'terminated') query = query.not('terminated_at', 'is', null)
       else if (status !== 'all') query = query.eq('is_active', status === 'active').is('terminated_at', null)

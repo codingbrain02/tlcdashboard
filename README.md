@@ -4,6 +4,8 @@ Employee and administrator apps built with React, TypeScript, Vite, Tailwind CSS
 
 ## Workspace design
 
+The admin employee directory's single search box accepts names or a full employee UUID. IDs are matched exactly and case-insensitively using the existing primary-key index; names retain multi-word substring search. Position/status filters, sorting, and pagination apply to both searches. No database migration is needed for ID matching.
+
 Routine success messages use one root-level `SuccessToast`, dispatched with `showSuccessToast` from `src/successNotifications.ts`. They fade and disappear after 1.2 seconds, including repeated identical saves and forms that close or remount. Errors, account-access warnings, and one-time sign-in credentials stay visible. Never include passwords in a toast.
 
 Both apps use matching Tailwind design tokens and `workspace-*`, `button-*`, and `form-field` components in their respective `src/global.css` files. Keep these foundations aligned across the independent repositories. The interface uses system fonts, neutral surfaces, a slate navigation rail, restrained indigo actions, and semantic status colors. No external fonts, image requests, or additional UI dependencies are needed.
