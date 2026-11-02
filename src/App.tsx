@@ -3,7 +3,7 @@ import type { User } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 import { useAttendance, useAttendanceHistory, type Shift } from './attendance'
 import PasswordSettings from './PasswordSettings'
-import PasswordSuccessToast from './PasswordSuccessToast'
+import { showSuccessToast } from './successNotifications'
 import EmojiAvatar from './EmojiAvatar'
 import { getAvatarEmoji } from './emojiAvatars'
 
@@ -199,9 +199,7 @@ function ContactEditor({ user, profile, onUserUpdated, onPhoneUpdated }: {
   const [phone, setPhone] = useState(profile.phone_number ?? '')
   const [emailBusy, setEmailBusy] = useState(false)
   const [phoneBusy, setPhoneBusy] = useState(false)
-  const [emailNotice, setEmailNotice] = useState('')
   const [emailError, setEmailError] = useState('')
-  const [phoneNotice, setPhoneNotice] = useState('')
   const [phoneError, setPhoneError] = useState('')
   const input = 'form-field'
   const save = 'button-primary ' + focusRing
@@ -210,9 +208,8 @@ function ContactEditor({ user, profile, onUserUpdated, onPhoneUpdated }: {
     event.preventDefault()
     if (!supabase || emailBusy) return
     const next = email.trim().toLowerCase()
-    setEmailNotice('')
     setEmailError('')
-    if (next === user.email?.toLowerCase()) { setEmailNotice('Your email is unchanged.'); return }
+    if (next === user.email?.toLowerCase()) { showSuccessToast('Your email is unchanged.'); return }
     if (next.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next)) { setEmailError('Enter a valid email address.'); return }
     if (!emailPassword) { setEmailError('Enter your current password to change your email.'); return }
     setEmailBusy(true)
@@ -228,7 +225,7 @@ function ContactEditor({ user, profile, onUserUpdated, onPhoneUpdated }: {
       setEmailPassword('')
       const refreshed = await supabase.auth.refreshSession()
       onUserUpdated(refreshed.data.user ?? { ...user, email: next })
-      setEmailNotice('Email address updated. Use it the next time you sign in.')
+      showSuccessToast('Email address updated.')
     } catch {
       setEmailError('Email changes are temporarily unavailable. Please try again.')
     } finally {
@@ -239,17 +236,16 @@ function ContactEditor({ user, profile, onUserUpdated, onPhoneUpdated }: {
   async function savePhone(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!supabase || phoneBusy) return
-    setPhoneNotice('')
     setPhoneError('')
     if (!/^\+[1-9]\d{6,14}$/.test(phone)) { setPhoneError('Choose a country and enter a phone number.'); return }
-    if (phone === profile.phone_number) { setPhoneNotice('Your phone number is unchanged.'); return }
+    if (phone === profile.phone_number) { showSuccessToast('Your phone number is unchanged.'); return }
     setPhoneBusy(true)
     try {
       const { data, error } = await supabase.from('employee_profiles')
         .update({ phone_number: phone }).eq('id', user.id).select('phone_number').single()
       if (error || !data?.phone_number) { setPhoneError('Could not save your phone number. Please try again.'); return }
       onPhoneUpdated(data.phone_number)
-      setPhoneNotice('Phone number updated.')
+      showSuccessToast('Phone number updated.')
     } catch {
       setPhoneError('Phone updates are temporarily unavailable. Please try again.')
     } finally {
@@ -265,7 +261,6 @@ function ContactEditor({ user, profile, onUserUpdated, onPhoneUpdated }: {
       <label htmlFor="profile-email-password" className="block text-sm font-semibold text-ink">Current password</label>
       <input id="profile-email-password" type="password" required autoComplete="current-password" value={emailPassword} onChange={event => setEmailPassword(event.target.value)} className={input} />
       {emailError && <p role="alert" className="text-xs text-rose-700 dark:text-rose-300">{emailError}</p>}
-      {emailNotice && <p role="status" className="text-xs text-emerald-700 dark:text-emerald-300">{emailNotice}</p>}
       <button type="submit" disabled={emailBusy} className={save}>{emailBusy ? 'Saving…' : 'Save email'}</button>
     </form>
     <form onSubmit={savePhone} className="space-y-2 border-t border-line pt-5">
@@ -275,7 +270,6 @@ function ContactEditor({ user, profile, onUserUpdated, onPhoneUpdated }: {
       </Suspense>
       <p className="text-xs leading-5 text-muted">Choose your country, then enter your number.</p>
       {phoneError && <p role="alert" className="text-xs text-rose-700 dark:text-rose-300">{phoneError}</p>}
-      {phoneNotice && <p role="status" className="text-xs text-emerald-700 dark:text-emerald-300">{phoneNotice}</p>}
       <button type="submit" disabled={phoneBusy} className={save}>{phoneBusy ? 'Saving…' : 'Save phone'}</button>
     </form>
   </div>
@@ -305,7 +299,6 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
   const [menuOpen, setMenuOpen] = useState(false)
   const [editingContact, setEditingContact] = useState(false)
   const [passwordOpen, setPasswordOpen] = useState(false)
-  const [passwordSavedVersion, setPasswordSavedVersion] = useState(0)
   const [avatarOpen, setAvatarOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const refreshBusy = useRef(false)
@@ -498,8 +491,7 @@ function EmployeeDashboard({ user, profile, theme, setTheme, onUserUpdated, onPh
           )}
           <footer className="mt-7 flex flex-wrap justify-between gap-2 border-t border-line pt-4 text-[11px] text-muted"><span>Tech Live Connect · Employee workspace</span><span>Times displayed in {timeZone}</span></footer>
         </main>
-        {passwordSavedVersion > 0 && <PasswordSuccessToast key={passwordSavedVersion} />}
-        {passwordOpen && <PasswordSettings onChanged={() => setPasswordSavedVersion(version => version + 1)} onClose={() => setPasswordOpen(false)} />}
+        {passwordOpen && <PasswordSettings onChanged={() => showSuccessToast('Password changed successfully.')} onClose={() => setPasswordOpen(false)} />}
         {avatarOpen && <Suspense fallback={<p role="status" className="fixed bottom-5 right-5 z-50 rounded-xl border border-line bg-surface p-3 text-sm shadow-lg">Loading emoji picker…</p>}><EmojiAvatarPicker value={profile.avatar_emoji} onSaved={onAvatarUpdated} onClose={() => setAvatarOpen(false)} /></Suspense>}
       </div>
     </div>
@@ -622,7 +614,7 @@ function FirstPasswordChange({ onSignOut, onDone }: { onSignOut: () => void; onD
         body: { action: 'change-password', currentPassword: current, newPassword: next },
       })
       if (result.error) { setError('Could not change your password. Check your temporary password and try again.'); return }
-      setCurrent(''); setNext(''); setConfirm('')
+      setCurrent(''); setNext(''); setConfirm(''); showSuccessToast('Password changed successfully.')
       onDone()
     } catch { setError('Password service is temporarily unavailable.') }
     finally { setBusy(false) }

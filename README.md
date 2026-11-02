@@ -4,6 +4,8 @@ Employee and administrator apps built with React, TypeScript, Vite, Tailwind CSS
 
 ## Workspace design
 
+Routine success messages use one root-level `SuccessToast`, dispatched with `showSuccessToast` from `src/successNotifications.ts`. They fade and disappear after 1.2 seconds, including repeated identical saves and forms that close or remount. Errors, account-access warnings, and one-time sign-in credentials stay visible. Never include passwords in a toast.
+
 Both apps use matching Tailwind design tokens and `workspace-*`, `button-*`, and `form-field` components in their respective `src/global.css` files. Keep these foundations aligned across the independent repositories. The interface uses system fonts, neutral surfaces, a slate navigation rail, restrained indigo actions, and semantic status colors. No external fonts, image requests, or additional UI dependencies are needed.
 
 Navigation collapses below 1024px with an explicitly labeled, expanded-state menu control; desktop navigation and account settings stay reachable in a scrolling sidebar. Both workspaces include a keyboard skip link, visible focus states, and reduced-motion support. Employee pages prioritize the time clock, compact hour totals, contact details, and attendance records. Profile customization remains emoji-only and employee-only. The redesign does not change authentication, authorization, realtime subscriptions, password sessions, or attendance calculations.

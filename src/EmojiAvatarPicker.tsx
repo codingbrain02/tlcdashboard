@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from './supabase'
+import { showSuccessToast } from './successNotifications'
 import EmojiAvatar from './EmojiAvatar'
 import { emojiAvatarGroups, getAvatarEmoji } from './emojiAvatars'
 
@@ -44,6 +45,7 @@ export default function EmojiAvatarPicker({ value, onSaved, onClose }: {
       }
       onSaved(selected)
       onClose()
+      showSuccessToast('Profile emoji updated.')
     } catch {
       setError('Could not reach the profile service. Check your connection and try again.')
     } finally {
