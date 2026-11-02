@@ -4,6 +4,8 @@ Employee and administrator apps built with React, TypeScript, Vite, Tailwind CSS
 
 ## Workspace design
 
+Admin overview cards show organization-wide Active employees, On duty, and Off duty counts. The service-only `admin_team_availability()` SQL function reads one snapshot and counts enabled, non-terminated employee accounts, excluding administrators. On duty means an open server-side shift, not an online browser session; off duty is the rest of the active team. Apply migration `202611030001_team_availability.sql`, then deploy `admin-api` before publishing the admin frontend. Attendance pages return these totals separately from paginated history, and the UI refreshes them on attendance/profile changes. Failed totals show unavailable values and retry controls instead of misleading zeros.
+
 The admin employee directory's single search box accepts names or a full employee UUID. IDs are matched exactly and case-insensitively using the existing primary-key index; names retain multi-word substring search. Position/status filters, sorting, and pagination apply to both searches. No database migration is needed for ID matching.
 
 Routine success messages use one root-level `SuccessToast`, dispatched with `showSuccessToast` from `src/successNotifications.ts`. They fade and disappear after 1.2 seconds, including repeated identical saves and forms that close or remount. Errors, account-access warnings, and one-time sign-in credentials stay visible. Never include passwords in a toast.

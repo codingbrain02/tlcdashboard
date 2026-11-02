@@ -344,14 +344,18 @@ Deno.serve(async (request) => {
       if (operator.role !== 'super_admin' && operator.role !== 'admin') return reply(403, 'Administrator access required.')
       const page = Number.isInteger(body.page) && body.page >= 0 && body.page <= 1000 ? body.page : 0
       const size = 20
-      const listed = await admin.from('admin_attendance_directory')
-        .select('id,user_id,full_name,clock_in,clock_out,end_reason')
-        .order('clock_in', { ascending: false }).order('id', { ascending: true })
-        .range(page * size, page * size + size)
+      const [listed, availability] = await Promise.all([
+        admin.from('admin_attendance_directory')
+          .select('id,user_id,full_name,clock_in,clock_out,end_reason')
+          .order('clock_in', { ascending: false }).order('id', { ascending: true })
+          .range(page * size, page * size + size),
+        admin.rpc('admin_team_availability'),
+      ])
       if (listed.error) return reply(503, 'Could not load attendance.')
       return reply(200, 'Attendance loaded.', {
         shifts: (listed.data ?? []).slice(0, size),
         hasMore: (listed.data?.length ?? 0) > size,
+        availability: availability.error ? null : availability.data?.[0] ?? null,
       })
     }
 

@@ -40,6 +40,9 @@ try {
     }
   }
   await database.exec('begin;')
+  const availabilityResults = await database.exec(await Deno.readTextFile(new URL('./team_availability.sql', import.meta.url)))
+  await database.exec('rollback;')
+  await database.exec('begin;')
   const results = await database.exec(await Deno.readTextFile(new URL('./employee_lifecycle.sql', import.meta.url)))
   const passwordResults = await database.exec(await Deno.readTextFile(new URL('./password_management.sql', import.meta.url)))
   const directResults = await database.exec(await Deno.readTextFile(new URL('./direct_password.sql', import.meta.url)))
@@ -52,6 +55,7 @@ try {
   console.log(directResults.at(-1)?.rows)
   console.log(ownSessionResults.at(-1)?.rows)
   console.log(emojiResults.at(-1)?.rows)
+  console.log(availabilityResults.at(-1)?.rows)
   console.log('Isolated lifecycle database tests passed. No live data was accessed.')
 } catch (error) {
   console.error(error instanceof Error ? error.message : 'Database tests failed')
