@@ -1,4 +1,6 @@
 {
-  "deno.enablePaths": ["./supabase/functions"],
-  "deno.config": "./supabase/functions/admin-api/deno.json"
+  "deno.enablePaths": ["./supabase/functions", "./supabase/tests"],
+  "deno.suggest.imports.hosts": {
+    "https://deno.land": false
+  }
 }

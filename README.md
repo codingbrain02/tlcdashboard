@@ -175,7 +175,7 @@ npm run dev
 
 Open the URL Vite prints. In another terminal, run `npm ci` and `npm run dev` inside `tlcdashboard-admin`. Its `envDir: '..'` reads the parent employee folder's environment files. Restart servers after environment changes. A separately located admin clone needs public configuration in its own parent or process/build environment.
 
-VS Code settings enable Deno only in `supabase/functions`, preserving React's normal TypeScript setup. Install the recommended Deno extension when editing backend code.
+VS Code settings enable Deno only in `supabase/functions` and `supabase/tests`, preserving React's normal TypeScript setup. The language server discovers each folder's `deno.json` instead of forcing one config across the workspace. Unused `deno.land` URL import suggestions are disabled to avoid registry-fetch errors; diagnostics and module resolution remain enabled. Install the recommended Deno extension when editing backend code. If an npm-installed Deno on Windows produces a `deno.CMD`/`EINVAL` startup error, set Deno: Path in VS Code User settings to the installed native `deno.exe`; keep that machine-specific path out of repository settings.
 
 ## Supabase configuration and releases
 
